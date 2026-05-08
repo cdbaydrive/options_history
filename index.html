@@ -114,6 +114,20 @@
   .kpi-value.white { color:var(--text); }
   .kpi-sub { font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text2); }
 
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-value { font-size:20px; letter-spacing:-0.5px; }
+    .kpi-cell { padding:14px 14px; }
+    .kpi-sub { font-size:9px; }
+  }
+  @media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi-value { font-size:18px; }
+    .kpi-cell { padding:12px 10px; gap:4px; }
+    .kpi-label { font-size:8px; letter-spacing:1.5px; }
+    .kpi-sub { font-size:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  }
+
   /* ── CHARTS ROW ── */
   .charts-row { display:grid; gap:1px; background:var(--border); margin-bottom:24px; }
   .charts-row.two { grid-template-columns:2fr 1fr; }
@@ -476,6 +490,7 @@
               <th>Ouverture</th>
               <th>Clôture</th>
               <th>Durée</th>
+              <th style="color:#a78bfa">J. Restants</th>
               <th>Prime Unit.</th>
               <th>Premium Init.</th>
               <th>Premium Final</th>
@@ -1143,6 +1158,7 @@ function filterTable() {
       <td>${fmtDate(t.startDate)}</td>
       <td>${fmtDate(t.endDate)}</td>
       <td>${t.duration??'—'}j</td>
+      <td>${(()=>{ const e=new Date(String(t.endDate).slice(0,10)); e.setHours(0,0,0,0); const n=new Date(); n.setHours(0,0,0,0); const diff=Math.round((e-n)/86400000); return diff>0?`<span style="color:#a78bfa;font-weight:600">${diff}j</span>`:'<span style="color:var(--text3)">—</span>'; })()}</td>
       <td>$${t.premium??'—'}</td>
       <td>${fmt$(t.premiumInit)}</td>
       <td class="${finalCls}">${isOpen?'<span style="color:var(--gold)">EN COURS</span>':fmt$(netP)}</td>
@@ -1297,8 +1313,10 @@ async function exportToExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'Options History');
 
   const filename = 'options_history.xlsx';
+  const buf = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
-  // Try File System Access API (lets user pick save location, incl. Desktop)
+  // Strategy 1 — File System Access API (Chrome/Edge desktop → boîte "Enregistrer sous")
   if(window.showSaveFilePicker) {
     try {
       const fileHandle = await window.showSaveFilePicker({
@@ -1306,18 +1324,34 @@ async function exportToExcel() {
         types:[{ description:'Excel Workbook', accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']} }],
       });
       const writable = await fileHandle.createWritable();
-      const buf = XLSX.write(wb, { bookType:'xlsx', type:'array' });
-      await writable.write(new Blob([buf], {type:'application/octet-stream'}));
+      await writable.write(blob);
       await writable.close();
       return;
     } catch(e) {
       if(e.name === 'AbortError') return; // user cancelled
-      // fall through to standard download
+      // fall through
     }
   }
 
-  // Fallback: standard browser download
-  XLSX.writeFile(wb, filename);
+  // Strategy 2 — Web Share API (iOS Safari → feuille de partage native)
+  if(navigator.canShare && navigator.canShare({ files:[new File([blob], filename)] })) {
+    try {
+      await navigator.share({
+        files: [new File([blob], filename, { type: blob.type })],
+        title: 'Options History',
+      });
+      return;
+    } catch(e) {
+      if(e.name === 'AbortError') return; // user cancelled
+      // fall through
+    }
+  }
+
+  // Strategy 3 — Téléchargement standard (fallback universel)
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
 }
 
 </script>

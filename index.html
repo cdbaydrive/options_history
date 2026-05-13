@@ -739,9 +739,9 @@ function renderChartCumulative(trades, avgMonthly) {
   const closedVals = allMonths.map(m=>+(byMonthClosed[m]||0).toFixed(2));
   const openVals   = allMonths.map(m=>+(byMonthOpen[m]||0).toFixed(2));
 
-  // Cumulative (closed only, for P&L integrity)
+  // Cumulative (fermés + ouverts)
   let cum = 0;
-  const cumVals = allMonths.map(m=>{ cum+=(byMonthClosed[m]||0); return +cum.toFixed(2); });
+  const cumVals = allMonths.map(m=>{ cum+=((byMonthClosed[m]||0)+(byMonthOpen[m]||0)); return +cum.toFixed(2); });
 
   // Average line
   const avgLine = allMonths.map(()=>+(avgMonthly||0).toFixed(2));
@@ -900,10 +900,9 @@ function renderChartQuarterly(trades) {
   function toDate(v) { if(!v) return null; if(v instanceof Date) return v; const d=new Date(String(v).slice(0,10)); return isNaN(d)?null:d; }
   function netP(t) { return (t.premiumFinal!==null&&t.premiumFinal!==undefined)?t.premiumFinal:(t.premiumInit||0); }
 
-  // Sum netP by symbol, closed trades only
-  const closed = trades.filter(t=>{ const d=toDate(t.endDate); return d&&d<=today; });
+  // Sum netP by symbol, tous trades (fermés + ouverts)
   const bySym = {};
-  closed.forEach(t=>{
+  trades.forEach(t=>{
     if(!t.symbol) return;
     bySym[t.symbol] = (bySym[t.symbol]||0) + netP(t);
   });
@@ -961,12 +960,9 @@ function renderChartYield(trades) {
   function toDate(v) { if(!v) return null; if(v instanceof Date) return v; const d=new Date(String(v).slice(0,10)); return isNaN(d)?null:d; }
   function netP(t) { return (t.premiumFinal!==null&&t.premiumFinal!==undefined)?t.premiumFinal:(t.premiumInit||0); }
 
-  const closed = trades.filter(t=>{ const d=toDate(t.endDate); return d&&d<=today; });
-
-  // Yield = Total Premium Final / (Strike × Contracts × 100)
-  // Aggregated per symbol: sum(netP) / sum(notional)
+  // Yield = netP / (Strike × Contracts × 100) — tous trades (fermés + ouverts)
   const bySym = {};
-  closed.forEach(t => {
+  trades.forEach(t => {
     if(!t.symbol||!t.strike||!t.contracts) return;
     const notional = t.strike * t.contracts * 100;
     if(notional <= 0) return;

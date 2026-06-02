@@ -123,106 +123,6 @@
   .kpi-value.white { color:var(--text); }
   .kpi-sub { font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text2); }
 
-  @media (max-width: 900px) {
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .kpi-value { font-size:20px; letter-spacing:-0.5px; }
-    .kpi-cell { padding:14px 14px; }
-    .kpi-sub { font-size:9px; }
-  }
-  @media (max-width: 480px) {
-    .kpi-grid { grid-template-columns: 1fr 1fr; }
-    .kpi-value { font-size:18px; }
-    .kpi-cell { padding:12px 10px; gap:4px; }
-    .kpi-label { font-size:8px; letter-spacing:1.5px; }
-    .kpi-sub { font-size:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  }
-
-  /* ── MOBILE LAYOUT — iOS Safari ── */
-  @media (max-width: 768px) {
-
-    /* Container padding */
-    .container { padding:16px 12px; }
-
-    /* Header stacks vertically */
-    .header {
-      flex-direction: column;
-      gap: 16px;
-      align-items: flex-start;
-    }
-    .header-title { font-size:22px; }
-    .upload-zone { width:100%; flex-direction:row; align-items:center; justify-content:space-between; }
-    .upload-btn { font-size:11px; padding:8px 14px; }
-
-    /* Charts rows: all columns collapse to single column */
-    .charts-row.two,
-    .charts-row.three { grid-template-columns: 1fr; }
-
-    /* Chart cards: constrain height so they don't overwhelm the screen */
-    .chart-card { padding:16px; }
-    .chart-wrap canvas { max-height:260px; }
-
-    /* Form grid: 2 columns on mobile, button full width below */
-    .form-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-    .form-cell-btn {
-      grid-column: 1 / -1;
-      padding:10px 14px;
-    }
-    .btn-add { padding:10px; font-size:12px; }
-
-    /* Form head: stack title and export button */
-    .form-head {
-      flex-direction: column;
-      gap:12px;
-      align-items:flex-start;
-    }
-    .btn-export { width:100%; justify-content:center; }
-
-    /* Table head bar: stack */
-    .table-head-bar {
-      flex-direction:column;
-      gap:10px;
-      align-items:flex-start;
-    }
-    .table-head-bar > div:last-child {
-      width:100%;
-      display:flex;
-      gap:8px;
-    }
-    .table-head-bar input,
-    .table-head-bar select { flex:1; width:auto; }
-
-    /* Tables: horizontal scroll, not full-width overflow hidden */
-    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-
-    /* Monthly totals: wrap */
-    #monthlyTotals { flex-wrap:wrap; gap:8px; }
-
-    /* Section head labels: smaller */
-    .section-label { font-size:8px; letter-spacing:2px; }
-
-    /* Sym grid (if still present elsewhere): 2 cols */
-    .sym-grid { grid-template-columns: repeat(2, 1fr); }
-
-    /* Footer: stack */
-    .footer { flex-direction:column; gap:8px; align-items:flex-start; }
-
-    /* Placeholder */
-    .placeholder { padding:40px 16px; }
-    .placeholder h2 { font-size:16px; }
-
-    /* Background grid: tighter on mobile */
-    body::after { background-size:40px 40px; }
-  }
-
-  /* Extra small phones */
-  @media (max-width: 390px) {
-    .header-title { font-size:18px; }
-    .chart-wrap canvas { max-height:220px; }
-    .form-grid { grid-template-columns: 1fr; }
-  }
-
   /* ── CHARTS ROW ── */
   .charts-row { display:grid; gap:1px; background:var(--border); margin-bottom:24px; }
   .charts-row.two { grid-template-columns:2fr 1fr; }
@@ -339,6 +239,72 @@
     display:flex; justify-content:space-between; align-items:center;
   }
   .footer-tag { font-family:'JetBrains Mono', monospace; font-size:9px; color:var(--text3); letter-spacing:3px; }
+
+  /* ════════════════════════════════════════════════════════════
+     MOBILE — placed last so source order overrides base rules.
+     Desktop layout (>768px) is untouched.
+     ════════════════════════════════════════════════════════════ */
+
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-value { font-size:20px; letter-spacing:-0.5px; }
+    .kpi-cell { padding:14px 14px; }
+    .kpi-sub { font-size:9px; }
+  }
+
+  @media (max-width: 768px) {
+    /* Container padding */
+    .container { padding:16px 12px; }
+
+    /* Header stacks vertically */
+    .header { flex-direction:column; gap:16px; align-items:flex-start; }
+    .header-title { font-size:22px; }
+    .upload-zone { width:100%; flex-direction:row; align-items:center; justify-content:space-between; }
+    .upload-btn { font-size:11px; padding:8px 14px; }
+
+    /* (1) FORM: 2 columns, wraps to rows — no horizontal scroll, like KPIs */
+    .form-grid { grid-template-columns: 1fr 1fr; }
+    .form-cell-btn { grid-column: 1 / -1; padding:10px 14px; }
+    .btn-add { padding:10px; font-size:12px; }
+    .form-head { flex-direction:column; gap:12px; align-items:flex-start; }
+    .btn-export { width:100%; justify-content:center; }
+
+    /* (2)(3) CHARTS: single column → stack in DOM order
+       Premium cumulé → Donut → Premium total ticker → Yield symbole → Durées */
+    .charts-row.two,
+    .charts-row.three { grid-template-columns: 1fr; }
+    .chart-card { padding:16px; }
+    .chart-wrap canvas { max-height:280px; }
+
+    /* (4) TABLES: keep horizontal scroll (touch) — untouched structurally */
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .table-head-bar { flex-direction:column; gap:10px; align-items:flex-start; }
+    .table-head-bar > div:last-child { width:100%; display:flex; gap:8px; }
+    .table-head-bar input,
+    .table-head-bar select { flex:1; width:auto; }
+    #monthlyTotals { flex-wrap:wrap; gap:8px; }
+
+    /* Misc */
+    .section-label { font-size:8px; letter-spacing:2px; }
+    .sym-grid { grid-template-columns: repeat(2, 1fr); }
+    .footer { flex-direction:column; gap:8px; align-items:flex-start; }
+    .placeholder { padding:40px 16px; }
+    .placeholder h2 { font-size:16px; }
+    body::after { background-size:40px 40px; }
+  }
+
+  @media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .kpi-value { font-size:18px; }
+    .kpi-cell { padding:12px 10px; gap:4px; }
+    .kpi-label { font-size:8px; letter-spacing:1.5px; }
+    .kpi-sub { font-size:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  }
+
+  @media (max-width: 390px) {
+    .header-title { font-size:18px; }
+    .chart-wrap canvas { max-height:240px; }
+  }
 </style>
 </head>
 <body>

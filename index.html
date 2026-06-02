@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Wheel Strategy">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -35,6 +35,9 @@
     font-family: 'Syne', sans-serif;
     min-height: 100vh;
     overflow-x: hidden;
+    /* Safe area for iPhone notch / Dynamic Island */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   /* ── NOISE TEXTURE ── */
@@ -132,6 +135,92 @@
     .kpi-cell { padding:12px 10px; gap:4px; }
     .kpi-label { font-size:8px; letter-spacing:1.5px; }
     .kpi-sub { font-size:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  }
+
+  /* ── MOBILE LAYOUT — iOS Safari ── */
+  @media (max-width: 768px) {
+
+    /* Container padding */
+    .container { padding:16px 12px; }
+
+    /* Header stacks vertically */
+    .header {
+      flex-direction: column;
+      gap: 16px;
+      align-items: flex-start;
+    }
+    .header-title { font-size:22px; }
+    .upload-zone { width:100%; flex-direction:row; align-items:center; justify-content:space-between; }
+    .upload-btn { font-size:11px; padding:8px 14px; }
+
+    /* Charts rows: all columns collapse to single column */
+    .charts-row.two,
+    .charts-row.three { grid-template-columns: 1fr; }
+
+    /* Chart cards: constrain height so they don't overwhelm the screen */
+    .chart-card { padding:16px; }
+    .chart-wrap canvas { max-height:260px; }
+
+    /* Form grid: 2 columns on mobile, button full width below */
+    .form-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .form-cell-btn {
+      grid-column: 1 / -1;
+      padding:10px 14px;
+    }
+    .btn-add { padding:10px; font-size:12px; }
+
+    /* Form head: stack title and export button */
+    .form-head {
+      flex-direction: column;
+      gap:12px;
+      align-items:flex-start;
+    }
+    .btn-export { width:100%; justify-content:center; }
+
+    /* Table head bar: stack */
+    .table-head-bar {
+      flex-direction:column;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .table-head-bar > div:last-child {
+      width:100%;
+      display:flex;
+      gap:8px;
+    }
+    .table-head-bar input,
+    .table-head-bar select { flex:1; width:auto; }
+
+    /* Tables: horizontal scroll, not full-width overflow hidden */
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+    /* Monthly totals: wrap */
+    #monthlyTotals { flex-wrap:wrap; gap:8px; }
+
+    /* Section head labels: smaller */
+    .section-label { font-size:8px; letter-spacing:2px; }
+
+    /* Sym grid (if still present elsewhere): 2 cols */
+    .sym-grid { grid-template-columns: repeat(2, 1fr); }
+
+    /* Footer: stack */
+    .footer { flex-direction:column; gap:8px; align-items:flex-start; }
+
+    /* Placeholder */
+    .placeholder { padding:40px 16px; }
+    .placeholder h2 { font-size:16px; }
+
+    /* Background grid: tighter on mobile */
+    body::after { background-size:40px 40px; }
+  }
+
+  /* Extra small phones */
+  @media (max-width: 390px) {
+    .header-title { font-size:18px; }
+    .chart-wrap canvas { max-height:220px; }
+    .form-grid { grid-template-columns: 1fr; }
   }
 
   /* ── CHARTS ROW ── */

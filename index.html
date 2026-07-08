@@ -1370,41 +1370,58 @@ async function exportToExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'Options History');
 
   const filename = 'options_history.xlsx';
-  const buf = XLSX.write(wb, { bookType:'xlsx', type:'array' });
-  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const buf  = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+  const blob = new Blob([buf], { type: mimeType });
 
-  // Strategy 1 — File System Access API (Chrome/Edge desktop → boîte "Enregistrer sous")
-  if(window.showSaveFilePicker) {
+  // Un seul objet File, réutilisé pour canShare() ET share() : l'ancien code en créait deux
+  // instances différentes (la seconde avec le bon type MIME, la première sans), ce qui faisait
+  // échouer canShare() en silence sur iOS/macOS et retombait systématiquement sur le
+  // téléchargement brut (Stratégie 3) → export non remplaçable, doublons "(1)", "(2)"...
+  const file = new File([blob], filename, { type: mimeType });
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS se fait passer pour un Mac
+
+  // Stratégie 1 — File System Access API : boîte "Enregistrer sous" native, permet de
+  // naviguer jusqu'à un dossier iCloud Drive et d'écraser le fichier existant.
+  // Uniquement disponible sur Chrome/Edge/Opera desktop (jamais sur WebKit, donc jamais sur
+  // iOS/iPadOS ni sur Safari macOS — on ne tente même pas l'appel dans ce cas).
+  if(!isIOS && window.showSaveFilePicker) {
     try {
       const fileHandle = await window.showSaveFilePicker({
+        id: 'optionsHistoryExport', // mémorise le dernier dossier choisi (iCloud Drive, etc.) pour les prochains exports
         suggestedName: filename,
-        types:[{ description:'Excel Workbook', accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx']} }],
+        types:[{ description:'Excel Workbook', accept:{ [mimeType]:['.xlsx'] } }],
       });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
       return;
     } catch(e) {
-      if(e.name === 'AbortError') return; // user cancelled
-      // fall through
+      if(e.name === 'AbortError') return; // annulé par l'utilisateur
+      // sinon on continue vers la stratégie suivante
     }
   }
 
-  // Strategy 2 — Web Share API (iOS Safari → feuille de partage native)
-  if(navigator.canShare && navigator.canShare({ files:[new File([blob], filename)] })) {
+  // Stratégie 2 — Web Share API :
+  //  · iOS/iPadOS → feuille de partage native, "Enregistrer dans Fichiers" permet de choisir
+  //    iCloud Drive ; un fichier de même nom déclenche la boîte système "Remplacer / Conserver
+  //    les deux" (ce choix appartient à l'OS, aucun script ne peut l'outrepasser — choisir
+  //    "Remplacer" pour écraser la version précédente).
+  //  · macOS Safari (qui n'implémente pas File System Access) → feuille de partage native,
+  //    seule option de sauvegarde proposée par WebKit sur Mac en dehors du téléchargement direct.
+  if(navigator.canShare && navigator.canShare({ files:[file] })) {
     try {
-      await navigator.share({
-        files: [new File([blob], filename, { type: blob.type })],
-        title: 'Options History',
-      });
+      await navigator.share({ files:[file], title:'Options History' });
       return;
     } catch(e) {
-      if(e.name === 'AbortError') return; // user cancelled
-      // fall through
+      if(e.name === 'AbortError') return; // annulé par l'utilisateur
+      // sinon on continue vers le fallback
     }
   }
 
-  // Strategy 3 — Téléchargement standard (fallback universel)
+  // Stratégie 3 — Téléchargement standard (dernier recours : Firefox, ou navigateur sans Web Share)
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();

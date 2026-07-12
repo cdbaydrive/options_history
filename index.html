@@ -1369,17 +1369,10 @@ function exportToExcel() {
   ws['!cols'] = headers.map(()=>({ wch: 20 }));
   XLSX.utils.book_append_sheet(wb, ws, 'Options History');
 
-  // Téléchargement direct, nom de fichier fixe : sur Safari (iOS et macOS), un re-téléchargement
-  // du même nom écrase le fichier existant sans boîte de dialogue ni doublon "(1)", "(2)"...
-  // Pointer le dossier de téléchargement par défaut de Safari vers iCloud Drive (Réglages Safari
-  // → Général → Emplacement de téléchargement des fichiers, ou Fichiers → Emplacement de
-  // téléchargement sur iOS) suffit alors à synchroniser automatiquement sur tous les appareils.
-  const filename = 'options_history.xlsx';
-  const buf  = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+  const buf = XLSX.write(wb, { bookType:'xlsx', type:'array' });
   const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url  = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = 'options_history.xlsx'; a.click();
   URL.revokeObjectURL(url);
 }
 

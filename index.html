@@ -543,7 +543,11 @@
             <div class="chart-title">Premium Cumulé</div>
             <div class="chart-sub">Trades fermés — valeur nette capturée</div>
           </div>
-          <div class="chart-badge">P&L Curve</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div class="chart-badge">P&L Curve</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase">Mois en cours</div>
+            <div id="currentMonthPremium" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--gold2)">—</div>
+          </div>
         </div>
         <div class="chart-wrap"><canvas id="chartCumulative" height="180"></canvas></div>
       </div>
@@ -817,6 +821,51 @@ let originalRawRows = [];
 let originalCOL = {};
 let manualTradeCounter = 0;
 
+// ── BTC PERSISTENCE ─────────────────────────────────────────────────────────
+// Stores BTC modifications keyed by a stable trade fingerprint,
+// so they survive Excel re-imports.
+const BTC_STORE_KEY = 'wheel_btc_modifications';
+
+function btcFingerprint(t) {
+  // Stable key: symbol + original idx (position in file) + original startDate
+  return `${t.symbol}|${t.idx}|${fmtDate(t.startDate)}`;
+}
+
+function loadBTCStore() {
+  try { return JSON.parse(localStorage.getItem(BTC_STORE_KEY) || '{}'); }
+  catch(e) { return {}; }
+}
+
+function saveBTCStore(store) {
+  try { localStorage.setItem(BTC_STORE_KEY, JSON.stringify(store)); }
+  catch(e) {}
+}
+
+function applyStoredBTCModifications(trades) {
+  const store = loadBTCStore();
+  if(!Object.keys(store).length) return;
+  trades.forEach(t => {
+    if(t.isManual) return;
+    const key = btcFingerprint(t);
+    const saved = store[key];
+    if(!saved) return;
+    // Re-apply stored BTC modification
+    t.contracts    = saved.contracts;
+    t.strike       = saved.strike;
+    t.startDate    = saved.startDate;
+    t.endDate      = saved.endDate;
+    t.duration     = saved.duration;
+    t.fees         = saved.fees;
+    t.premium      = saved.premium;
+    t.premiumInit  = saved.premiumInit;
+    t.premiumFinal = saved.premiumFinal;
+    t.yield        = saved.yield;
+    t.btcModified  = true;
+    t.btcPremium   = saved.btcPremium;
+    t.btcFees      = saved.btcFees;
+  });
+}
+
 // Set default start date to today
 window.addEventListener('DOMContentLoaded', ()=>{
   const today = new Date();
@@ -902,6 +951,7 @@ function loadFile(e) {
         yield:        parseNum(COL.yield      ? r[COL.yield]      : null),
       }));
 
+      applyStoredBTCModifications(allTrades);
       renderDashboard();
     } catch(err) {
       document.getElementById('uploadStatus').textContent = '✗ Erreur de lecture du fichier';
@@ -954,6 +1004,22 @@ function renderDashboard() {
   const elapsedDays = Math.max(1, (lastDate - firstDate) / 86400000);
   const elapsedMonths = elapsedDays / 30.4375; // moyenne précise : 365.25/12
   const avgMonthlyPremium = totalNet / elapsedMonths;
+
+  // Premium mois en cours (clôturé + ouvert), imputé à startDate
+  const nowY = today.getFullYear();
+  const nowM = today.getMonth();
+  function netP(t) { return (t.premiumFinal!==null&&t.premiumFinal!==undefined)?t.premiumFinal:(t.premiumInit||0); }
+  const currentMonthNet = trades.reduce((s,t)=>{
+    const d = toDate(t.startDate);
+    if(!d) return s;
+    if(d.getFullYear()===nowY && d.getMonth()===nowM) return s + netP(t);
+    return s;
+  }, 0);
+  const cmEl = document.getElementById('currentMonthPremium');
+  if(cmEl) {
+    cmEl.textContent = fmt$(currentMonthNet);
+    cmEl.style.color = currentMonthNet >= 0 ? 'var(--gold2)' : 'var(--red)';
+  }
 
   document.getElementById('kpiPremium').textContent = fmt$(totalNet);
   document.getElementById('kpiPremiumSub').textContent =
@@ -1101,6 +1167,19 @@ function renderChartCumulative(trades, avgMonthly) {
         },
         tooltip:{
           callbacks:{
+            title: ctx => {
+              if(!ctx.length) return '';
+              const monthLabel = ctx[0].label;
+              return monthLabel;
+            },
+            afterTitle: ctx => {
+              if(!ctx.length) return '';
+              const monthLabel = ctx[0].label;
+              const closed = +(byMonthClosed[monthLabel]||0).toFixed(2);
+              const open   = +(byMonthOpen[monthLabel]||0).toFixed(2);
+              const total  = +(closed + open).toFixed(2);
+              return `\nPremium total: $${Math.round(total).toLocaleString('fr-FR')}`;
+            },
             label: ctx => {
               const v = ctx.raw;
               if(v===0) return null;
@@ -1440,7 +1519,8 @@ function filterTable() {
   tbody.innerHTML = filtered.map(t=>{
     const isOpen = isOpenTrade(t);
     const netP = (t.premiumFinal!==null&&t.premiumFinal!==undefined)?t.premiumFinal:(t.premiumInit||0);
-    const yieldCls = (t.yield||0)>0.04?'pos':(t.yield||0)<0?'neg':'';
+    const yieldAnnVal = (t.yield && t.duration && t.duration > 0) ? t.yield * (365 / t.duration) : null;
+    const yieldCls = yieldAnnVal !== null ? (yieldAnnVal > 0.50 ? 'pos' : yieldAnnVal < 0 ? 'neg' : '') : '';
     const hasBTC = !!t.btcModified;
     const finalCls = isOpen?'open-trade':(netP>=0?'pos':'neg');
     const tradeKey = t.isManual ? `m_${t.manualId}` : `r_${t.idx}`;
@@ -1666,7 +1746,11 @@ function overlayDelete() {
   if(t.isManual) {
     allTrades = allTrades.filter(x => !(x.isManual && x.manualId === t.manualId));
   } else {
-    // For file-loaded rows: remove from allTrades AND from originalRawRows (by same idx position)
+    // Remove from BTC store
+    const store = loadBTCStore();
+    delete store[btcFingerprint(t)];
+    saveBTCStore(store);
+    // Remove from allTrades and originalRawRows
     const tradeIdx = allTrades.indexOf(t);
     if(tradeIdx !== -1) allTrades.splice(tradeIdx, 1);
     // Remove from originalRawRows (idx-1 because idx is 1-based, but only if it was an original row)
@@ -1725,6 +1809,19 @@ function overlayValidate() {
   t.btcModified  = true;
   t.btcPremium   = premBTC;
   t.btcFees      = feesBTC;
+
+  // Persist BTC modification so it survives an Excel re-import
+  if(!t.isManual) {
+    const store = loadBTCStore();
+    store[btcFingerprint(t)] = {
+      contracts, strike,
+      startDate: startRaw, endDate: endRaw, duration,
+      fees: feesTotal, premium: premInit,
+      premiumInit: premNetInit, premiumFinal: premFinalNet,
+      yield: yieldVal, btcPremium: premBTC, btcFees: feesBTC,
+    };
+    saveBTCStore(store);
+  }
 
   // If it's an original file row, also update the originalRawRows entry so export is consistent
   if(!t.isManual && originalCOL && originalRawRows.length > 0) {

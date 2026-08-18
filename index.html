@@ -228,6 +228,106 @@
   .btn-delete:hover { color:var(--red); }
   .form-error { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--red); padding:8px 24px; display:none; }
 
+  /* ── BTC OVERLAY ── */
+  .overlay-backdrop {
+    display:none; position:fixed; inset:0; z-index:1000;
+    background:rgba(8,12,20,0.85); backdrop-filter:blur(4px);
+    align-items:center; justify-content:center;
+  }
+  .overlay-backdrop.open { display:flex; }
+  .overlay-box {
+    background:var(--bg2); border:1px solid var(--border);
+    width:min(680px, 96vw); max-height:90vh; overflow-y:auto;
+    position:relative; box-shadow:0 24px 64px rgba(0,0,0,0.6);
+  }
+  .overlay-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:18px 24px; border-bottom:1px solid var(--border);
+    position:sticky; top:0; background:var(--bg2); z-index:2;
+  }
+  .overlay-title { font-size:13px; font-weight:700; letter-spacing:1px; text-transform:uppercase; }
+  .overlay-close {
+    background:none; border:none; color:var(--text2); cursor:pointer;
+    font-size:20px; line-height:1; padding:2px 6px; transition:color .15s;
+  }
+  .overlay-close:hover { color:var(--text); }
+  .overlay-body { padding:24px; display:flex; flex-direction:column; gap:20px; }
+  .overlay-section-label {
+    font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:3px;
+    color:var(--text3); text-transform:uppercase; margin-bottom:10px;
+  }
+  .overlay-row { display:grid; gap:1px; background:var(--border); }
+  .overlay-row.cols-2 { grid-template-columns:1fr 1fr; }
+  .overlay-row.cols-3 { grid-template-columns:1fr 1fr 1fr; }
+  .overlay-row.cols-4 { grid-template-columns:1fr 1fr 1fr 1fr; }
+  .overlay-cell { background:var(--bg3); padding:12px 14px; display:flex; flex-direction:column; gap:5px; }
+  .overlay-cell-label { font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:2px; color:var(--text3); text-transform:uppercase; }
+  .overlay-cell-value { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text2); }
+  .overlay-input {
+    background:var(--bg); border:1px solid var(--border); color:var(--text);
+    font-family:'JetBrains Mono',monospace; font-size:12px; padding:6px 8px;
+    outline:none; width:100%; transition:border-color .15s; color-scheme:dark;
+  }
+  .overlay-input:focus { border-color:var(--gold); }
+  .overlay-preview {
+    background:var(--bg3); border:1px solid var(--border);
+    padding:16px; display:none; flex-direction:column; gap:10px;
+  }
+  .overlay-preview.visible { display:flex; }
+  .overlay-preview-row {
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:'JetBrains Mono',monospace; font-size:11px;
+  }
+  .overlay-preview-label { color:var(--text3); }
+  .overlay-preview-val { color:var(--text); font-weight:600; }
+  .overlay-preview-val.pos { color:var(--green); }
+  .overlay-preview-val.neg { color:var(--red); }
+  .overlay-preview-val.gold { color:var(--gold2); }
+  .overlay-actions {
+    display:flex; gap:10px; justify-content:space-between;
+    padding:16px 24px; border-top:1px solid var(--border);
+    position:sticky; bottom:0; background:var(--bg2); z-index:2;
+  }
+  .btn-overlay-delete {
+    background:transparent; border:1px solid var(--red); color:var(--red);
+    padding:8px 18px; font-family:'Syne',sans-serif; font-size:11px;
+    font-weight:600; letter-spacing:1px; text-transform:uppercase;
+    cursor:pointer; transition:all .15s;
+  }
+  .btn-overlay-delete:hover { background:var(--red); color:#fff; }
+  .btn-overlay-cancel {
+    background:transparent; border:1px solid var(--border); color:var(--text2);
+    padding:8px 18px; font-family:'Syne',sans-serif; font-size:11px;
+    font-weight:600; letter-spacing:1px; text-transform:uppercase;
+    cursor:pointer; transition:all .15s; margin-left:auto;
+  }
+  .btn-overlay-cancel:hover { border-color:var(--text2); color:var(--text); }
+  .btn-overlay-validate {
+    background:var(--gold); color:var(--bg); border:none;
+    padding:8px 22px; font-family:'Syne',sans-serif; font-size:11px;
+    font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    cursor:pointer; transition:background .15s; display:none;
+  }
+  .btn-overlay-validate:hover { background:var(--gold2); }
+  .btn-overlay-validate.visible { display:inline-block; }
+  .btc-dot {
+    display:inline-block; width:7px; height:7px; border-radius:50%;
+    background:#a78bfa; margin-left:5px; vertical-align:middle;
+    flex-shrink:0;
+  }
+  .btn-menu {
+    background:transparent; border:none; color:var(--text3); cursor:pointer;
+    font-size:16px; padding:2px 8px; transition:color .15s; line-height:1;
+    letter-spacing:1px;
+  }
+  .btn-menu:hover { color:var(--text); }
+  .fees-total-bar {
+    background:var(--bg); border:1px solid var(--gold);
+    padding:10px 14px; font-family:'JetBrains Mono',monospace; font-size:11px;
+    color:var(--gold2); display:flex; justify-content:space-between;
+  }
+  .overlay-divider { height:1px; background:var(--border); }
+
   /* ── SCROLLBAR ── */
   ::-webkit-scrollbar { width:4px; height:4px; }
   ::-webkit-scrollbar-track { background:var(--bg); }
@@ -558,7 +658,7 @@
               <th>Yield</th>
               <th>Yield Ann.</th>
               <th>Statut</th>
-              <th></th>
+              <th style="width:36px"></th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -571,6 +671,142 @@
   <div class="footer">
     <div class="footer-tag">⬡ Options Analytics Dashboard</div>
     <div class="footer-tag" id="footerDate">—</div>
+  </div>
+
+  <!-- BTC / EDIT OVERLAY -->
+  <div class="overlay-backdrop" id="btcOverlay" onclick="overlayBackdropClick(event)">
+    <div class="overlay-box">
+      <div class="overlay-header">
+        <div class="overlay-title" id="overlayTitle">Modifier la position</div>
+        <button class="overlay-close" onclick="closeOverlay()">✕</button>
+      </div>
+      <div class="overlay-body">
+
+        <!-- READ-ONLY INFO -->
+        <div>
+          <div class="overlay-section-label">Informations de la position (lecture seule)</div>
+          <div class="overlay-row cols-4">
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Ligne #</div>
+              <div class="overlay-cell-value" id="ov_idx">—</div>
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Ticker</div>
+              <div class="overlay-cell-value" id="ov_symbol" style="color:var(--gold2);font-weight:700">—</div>
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Type</div>
+              <div class="overlay-cell-value" id="ov_type">—</div>
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Sens</div>
+              <div class="overlay-cell-value" style="color:var(--red)">SELL</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="overlay-divider"></div>
+
+        <!-- EDITABLE FIELDS -->
+        <div>
+          <div class="overlay-section-label">Champs modifiables</div>
+          <div class="overlay-row cols-4" style="margin-bottom:1px">
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Contrats</div>
+              <input class="overlay-input" id="ov_contracts" type="number" min="1" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Strike ($)</div>
+              <input class="overlay-input" id="ov_strike" type="number" min="0" step="0.5" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Date début</div>
+              <input class="overlay-input" id="ov_start" type="date" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Date fin (BTC)</div>
+              <input class="overlay-input" id="ov_end" type="date" oninput="overlayRecalc()">
+            </div>
+          </div>
+          <div class="overlay-row cols-3" style="margin-bottom:1px">
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Prime initiale / contrat ($)</div>
+              <input class="overlay-input" id="ov_premium_init" type="number" step="0.01" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Prime BTC / contrat ($)</div>
+              <input class="overlay-input" id="ov_premium_btc" type="number" step="0.01" placeholder="0.00" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label" style="color:var(--gold)">Prime finale / contrat ($)</div>
+              <div class="overlay-cell-value" id="ov_premium_final_unit" style="color:var(--gold2)">—</div>
+            </div>
+          </div>
+          <!-- FEES SECTION -->
+          <div class="overlay-row cols-3">
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Frais initiaux ($)</div>
+              <input class="overlay-input" id="ov_fees_init" type="number" step="0.01" placeholder="0.00" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell">
+              <div class="overlay-cell-label">Frais BTC ($)</div>
+              <input class="overlay-input" id="ov_fees_btc" type="number" step="0.01" placeholder="0.00" oninput="overlayRecalc()">
+            </div>
+            <div class="overlay-cell" style="background:var(--bg)">
+              <div class="overlay-cell-label" style="color:var(--gold)">Frais totaux ($)</div>
+              <div class="overlay-cell-value" id="ov_fees_total_display" style="color:var(--gold2)">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="overlay-divider"></div>
+
+        <!-- PREVIEW -->
+        <div>
+          <div class="overlay-section-label">Aperçu après modification</div>
+          <div class="overlay-preview" id="overlayPreview">
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Durée réelle du trade</span>
+              <span class="overlay-preview-val" id="prev_duration">—</span>
+            </div>
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Premium total initial brut</span>
+              <span class="overlay-preview-val" id="prev_init">—</span>
+            </div>
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Frais totaux</span>
+              <span class="overlay-preview-val neg" id="prev_fees">—</span>
+            </div>
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Premium net initial</span>
+              <span class="overlay-preview-val" id="prev_net_init">—</span>
+            </div>
+            <div class="overlay-preview-row" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px">
+              <span class="overlay-preview-label">Prime finale / contrat</span>
+              <span class="overlay-preview-val gold" id="prev_prem_final_unit">—</span>
+            </div>
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Premium final net (col. M)</span>
+              <span class="overlay-preview-val gold" id="prev_final">—</span>
+            </div>
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Yield (prime finale / notionnel)</span>
+              <span class="overlay-preview-val pos" id="prev_yield">—</span>
+            </div>
+            <div class="overlay-preview-row">
+              <span class="overlay-preview-label">Yield annualisé</span>
+              <span class="overlay-preview-val pos" id="prev_yield_ann">—</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- overlay-body -->
+      <div class="overlay-actions">
+        <button class="btn-overlay-delete" onclick="overlayDelete()">✕ Supprimer</button>
+        <button class="btn-overlay-cancel" onclick="closeOverlay()">Annuler</button>
+        <button class="btn-overlay-validate visible" id="btnValidate" onclick="overlayValidate()">✓ Valider</button>
+      </div>
+    </div>
   </div>
 
 </div><!-- container -->
@@ -1205,10 +1441,12 @@ function filterTable() {
     const isOpen = isOpenTrade(t);
     const netP = (t.premiumFinal!==null&&t.premiumFinal!==undefined)?t.premiumFinal:(t.premiumInit||0);
     const yieldCls = (t.yield||0)>0.04?'pos':(t.yield||0)<0?'neg':'';
+    const hasBTC = !!t.btcModified;
     const finalCls = isOpen?'open-trade':(netP>=0?'pos':'neg');
+    const tradeKey = t.isManual ? `m_${t.manualId}` : `r_${t.idx}`;
     return `<tr>
       <td style="color:var(--text3)">${t.idx}</td>
-      <td style="color:#f0c96e;font-weight:600">${t.symbol}</td>
+      <td style="color:#f0c96e;font-weight:600;display:flex;align-items:center;gap:4px">${t.symbol}${hasBTC?'<span class="btc-dot" title="Position modifiée (BTC)"></span>':''}</td>
       <td><span class="tag ${t.type.includes('Put')?'tag-put':'tag-call'}">${t.type.includes('Put')?'PUT':'CALL'}</span></td>
       <td>${t.contracts??'—'}</td>
       <td>$${t.strike??'—'}</td>
@@ -1222,7 +1460,7 @@ function filterTable() {
       <td class="${yieldCls}">${fmtPct(t.yield)}</td>
       <td class="${yieldCls}">${t.yield && t.duration && t.duration > 0 ? fmtPct(t.yield * (365 / t.duration)) : '—'}</td>
       <td><span style="font-size:9px;letter-spacing:1px;color:${isOpen?'#c9a84c':'#2ecc87'}">${isOpen?'● LIVE':'● CLOSED'}</span></td>
-      <td>${t.isManual ? `<button class="btn-delete" onclick="deleteTrade(${t.manualId})" title="Supprimer ce trade">✕</button>` : ''}</td>
+      <td><button class="btn-menu" onclick="openOverlay('${tradeKey}')" title="Modifier / Supprimer">···</button></td>
     </tr>`;
   }).join('');
 }
@@ -1298,8 +1536,216 @@ function handleAddTrade() {
 // ── DELETE MANUAL TRADE ─────────────────────────────────────────────────────
 function deleteTrade(manualId) {
   allTrades = allTrades.filter(t => !(t.isManual && t.manualId === manualId));
-  // Re-index
   allTrades.forEach((t,i)=>{ t.idx = i+1; });
+  renderDashboard();
+}
+
+// ── OVERLAY LOGIC ────────────────────────────────────────────────────────────
+let overlayTradeKey = null; // "m_<manualId>" or "r_<idx>"
+
+function findTradeByKey(key) {
+  if(key.startsWith('m_')) {
+    const mid = parseInt(key.slice(2));
+    return allTrades.find(t => t.isManual && t.manualId === mid) || null;
+  } else {
+    const idx = parseInt(key.slice(2));
+    return allTrades.find(t => t.idx === idx) || null;
+  }
+}
+
+function openOverlay(key) {
+  const t = findTradeByKey(key);
+  if(!t) return;
+  overlayTradeKey = key;
+
+  // Read-only fields
+  document.getElementById('ov_idx').textContent    = '#' + t.idx;
+  document.getElementById('ov_symbol').textContent = t.symbol || '—';
+  document.getElementById('ov_type').textContent   = t.type || '—';
+
+  // Editable fields — pre-fill with current values
+  document.getElementById('ov_contracts').value = t.contracts ?? '';
+  document.getElementById('ov_strike').value    = t.strike ?? '';
+  document.getElementById('ov_start').value     = t.startDate ? fmtDate(t.startDate) : '';
+  document.getElementById('ov_end').value       = t.endDate   ? fmtDate(t.endDate)   : '';
+  document.getElementById('ov_premium_init').value = t.premium ?? '';
+  document.getElementById('ov_premium_btc').value  = t.btcPremium ?? '';
+  document.getElementById('ov_fees_init').value = t.fees ?? '';
+  document.getElementById('ov_fees_btc').value  = t.btcFees ?? '';
+
+  // Reset preview
+  document.getElementById('overlayPreview').classList.remove('visible');
+  document.getElementById('ov_premium_final_unit').textContent = '—';
+  document.getElementById('ov_fees_total_display').textContent = '—';
+
+  // Title
+  document.getElementById('overlayTitle').textContent =
+    `Modifier position #${t.idx} — ${t.symbol}`;
+
+  // Show backdrop
+  document.getElementById('btcOverlay').classList.add('open');
+  overlayRecalc();
+}
+
+function closeOverlay() {
+  document.getElementById('btcOverlay').classList.remove('open');
+  overlayTradeKey = null;
+}
+
+function overlayBackdropClick(e) {
+  if(e.target === document.getElementById('btcOverlay')) closeOverlay();
+}
+
+function overlayRecalc() {
+  const contracts   = parseFloat(document.getElementById('ov_contracts').value) || 0;
+  const strike      = parseFloat(document.getElementById('ov_strike').value)    || 0;
+  const startRaw    = document.getElementById('ov_start').value;
+  const endRaw      = document.getElementById('ov_end').value;
+  const premInit    = parseFloat(document.getElementById('ov_premium_init').value) || 0;
+  const premBTC     = parseFloat(document.getElementById('ov_premium_btc').value)  || 0;
+  const feesInit    = parseFloat(document.getElementById('ov_fees_init').value)    || 0;
+  const feesBTC     = parseFloat(document.getElementById('ov_fees_btc').value)     || 0;
+
+  // Prime finale / contrat = prime initiale - prime BTC
+  const premFinalUnit = premInit - premBTC;
+  document.getElementById('ov_premium_final_unit').textContent =
+    premInit > 0 ? '$' + premFinalUnit.toFixed(2) : '—';
+
+  const feesTotal = feesInit + feesBTC;
+  document.getElementById('ov_fees_total_display').textContent =
+    feesTotal > 0 ? '$' + feesTotal.toFixed(2) : '$0.00';
+
+  // Can we compute the preview?
+  if(!contracts || !strike || !startRaw || !endRaw || !premInit) {
+    document.getElementById('overlayPreview').classList.remove('visible');
+    return;
+  }
+
+  const startDate = new Date(startRaw);
+  const endDate   = new Date(endRaw);
+  if(isNaN(startDate) || isNaN(endDate) || endDate <= startDate) {
+    document.getElementById('overlayPreview').classList.remove('visible');
+    return;
+  }
+
+  const duration = Math.round((endDate - startDate) / 86400000);
+  // Total premium initial brut (avant frais) = prime initiale × contrats × 100
+  const totalInitBrut = premInit * contracts * 100;
+  // Premium net initial = brut - frais initiaux (pas les frais BTC)
+  const netInit = totalInitBrut - feesInit;
+  // Premium final net = prime finale/contrat × contrats × 100 - frais totaux
+  const premFinalTotal = premFinalUnit * contracts * 100 - feesTotal;
+  const notional = strike * contracts * 100;
+  const yieldVal = notional > 0 ? premFinalUnit * contracts * 100 / notional : 0;
+  // Yield annualisé sur la durée réelle
+  const yieldAnn = duration > 0 ? yieldVal * (365 / duration) : 0;
+
+  // Update preview
+  const prev = document.getElementById('overlayPreview');
+  prev.classList.add('visible');
+  document.getElementById('prev_duration').textContent      = duration + ' jours';
+  document.getElementById('prev_init').textContent          = '$' + totalInitBrut.toFixed(2);
+  document.getElementById('prev_fees').textContent          = '−$' + feesTotal.toFixed(2);
+  document.getElementById('prev_net_init').textContent      = '$' + netInit.toFixed(2);
+  document.getElementById('prev_prem_final_unit').textContent = '$' + premFinalUnit.toFixed(2);
+
+  const finalEl = document.getElementById('prev_final');
+  finalEl.textContent = '$' + premFinalTotal.toFixed(2);
+  finalEl.className = 'overlay-preview-val ' + (premFinalTotal >= 0 ? 'pos' : 'neg');
+
+  document.getElementById('prev_yield').textContent     = (yieldVal * 100).toFixed(3) + '%';
+  document.getElementById('prev_yield_ann').textContent = (yieldAnn * 100).toFixed(2) + '%';
+}
+
+function overlayDelete() {
+  if(!overlayTradeKey) return;
+  const t = findTradeByKey(overlayTradeKey);
+  if(!t) return;
+  if(!confirm(`Supprimer la ligne #${t.idx} — ${t.symbol} ?`)) return;
+
+  if(t.isManual) {
+    allTrades = allTrades.filter(x => !(x.isManual && x.manualId === t.manualId));
+  } else {
+    // For file-loaded rows: remove from allTrades AND from originalRawRows (by same idx position)
+    const tradeIdx = allTrades.indexOf(t);
+    if(tradeIdx !== -1) allTrades.splice(tradeIdx, 1);
+    // Remove from originalRawRows (idx-1 because idx is 1-based, but only if it was an original row)
+    const rawIdx = t.idx - 1;
+    if(rawIdx >= 0 && rawIdx < originalRawRows.length) originalRawRows.splice(rawIdx, 1);
+  }
+  // Re-index
+  allTrades.forEach((x,i)=>{ x.idx = i+1; });
+  closeOverlay();
+  renderDashboard();
+}
+
+function overlayValidate() {
+  if(!overlayTradeKey) return;
+  const t = findTradeByKey(overlayTradeKey);
+  if(!t) return;
+
+  const contracts   = parseFloat(document.getElementById('ov_contracts').value) || 0;
+  const strike      = parseFloat(document.getElementById('ov_strike').value)    || 0;
+  const startRaw    = document.getElementById('ov_start').value;
+  const endRaw      = document.getElementById('ov_end').value;
+  const premInit    = parseFloat(document.getElementById('ov_premium_init').value) || 0;
+  const premBTC     = parseFloat(document.getElementById('ov_premium_btc').value)  || 0;
+  const feesInit    = parseFloat(document.getElementById('ov_fees_init').value)    || 0;
+  const feesBTC     = parseFloat(document.getElementById('ov_fees_btc').value)     || 0;
+
+  if(!contracts || !strike || !startRaw || !endRaw || !premInit) {
+    alert('Veuillez remplir tous les champs obligatoires.'); return;
+  }
+  const startDate = new Date(startRaw);
+  const endDate   = new Date(endRaw);
+  if(isNaN(startDate) || isNaN(endDate) || endDate <= startDate) {
+    alert('Dates invalides.'); return;
+  }
+
+  const duration      = Math.round((endDate - startDate) / 86400000);
+  const premFinalUnit = premInit - premBTC;
+  const feesTotal     = feesInit + feesBTC;
+  const premInitTotal = premInit * contracts * 100;
+  const premFinalNet  = premFinalUnit * contracts * 100 - feesTotal;
+  const notional      = strike * contracts * 100;
+  const yieldVal      = notional > 0 ? premFinalUnit * contracts * 100 / notional : null;
+  const premNetInit   = premInitTotal - feesInit;
+
+  // Mutate the trade in place — idx stays the same
+  t.contracts    = contracts;
+  t.strike       = strike;
+  t.startDate    = startRaw;
+  t.endDate      = endRaw;
+  t.duration     = duration;
+  t.fees         = feesTotal;
+  t.premium      = premInit;
+  t.premiumInit  = premNetInit;
+  t.premiumFinal = premFinalNet;
+  t.yield        = yieldVal;
+  t.btcModified  = true;
+  t.btcPremium   = premBTC;
+  t.btcFees      = feesBTC;
+
+  // If it's an original file row, also update the originalRawRows entry so export is consistent
+  if(!t.isManual && originalCOL && originalRawRows.length > 0) {
+    const rawIdx = t.idx - 1;
+    if(rawIdx >= 0 && rawIdx < originalRawRows.length) {
+      const C = originalCOL;
+      const r = originalRawRows[rawIdx];
+      if(C.contracts)    r[C.contracts]    = contracts;
+      if(C.strike)       r[C.strike]       = strike;
+      if(C.startDate)    r[C.startDate]    = startRaw;
+      if(C.endDate)      r[C.endDate]      = endRaw;
+      if(C.duration)     r[C.duration]     = duration;
+      if(C.fees)         r[C.fees]         = feesTotal;
+      if(C.premium)      r[C.premium]      = premInit;
+      if(C.premiumInit)  r[C.premiumInit]  = premNetInit;
+      if(C.premiumFinal) r[C.premiumFinal] = premFinalNet;
+      if(C.yield)        r[C.yield]        = yieldVal;
+    }
+  }
+
+  closeOverlay();
   renderDashboard();
 }
 

@@ -821,50 +821,7 @@ let originalRawRows = [];
 let originalCOL = {};
 let manualTradeCounter = 0;
 
-// ── BTC PERSISTENCE ─────────────────────────────────────────────────────────
-// Stores BTC modifications keyed by a stable trade fingerprint,
-// so they survive Excel re-imports.
-const BTC_STORE_KEY = 'wheel_btc_modifications';
 
-function btcFingerprint(t) {
-  // Stable key: symbol + original idx (position in file) + original startDate
-  return `${t.symbol}|${t.idx}|${fmtDate(t.startDate)}`;
-}
-
-function loadBTCStore() {
-  try { return JSON.parse(localStorage.getItem(BTC_STORE_KEY) || '{}'); }
-  catch(e) { return {}; }
-}
-
-function saveBTCStore(store) {
-  try { localStorage.setItem(BTC_STORE_KEY, JSON.stringify(store)); }
-  catch(e) {}
-}
-
-function applyStoredBTCModifications(trades) {
-  const store = loadBTCStore();
-  if(!Object.keys(store).length) return;
-  trades.forEach(t => {
-    if(t.isManual) return;
-    const key = btcFingerprint(t);
-    const saved = store[key];
-    if(!saved) return;
-    // Re-apply stored BTC modification
-    t.contracts    = saved.contracts;
-    t.strike       = saved.strike;
-    t.startDate    = saved.startDate;
-    t.endDate      = saved.endDate;
-    t.duration     = saved.duration;
-    t.fees         = saved.fees;
-    t.premium      = saved.premium;
-    t.premiumInit  = saved.premiumInit;
-    t.premiumFinal = saved.premiumFinal;
-    t.yield        = saved.yield;
-    t.btcModified  = true;
-    t.btcPremium   = saved.btcPremium;
-    t.btcFees      = saved.btcFees;
-  });
-}
 
 // Set default start date to today
 window.addEventListener('DOMContentLoaded', ()=>{
@@ -931,27 +888,32 @@ function loadFile(e) {
         premiumInit:  findCol(rows,'Total Premium Initial','total premium initial'),
         premiumFinal: findCol(rows,'Total Premium Final','total premium final'),
         yield:        findCol(rows,'Yield','yield'),
+        btcStatus:    findCol(rows,'Statut BTC','statut btc','status btc'),
       };
       originalRawRows = rows;
       originalCOL = COL;
-      allTrades = rows.map((r,i) => ({
-        idx:          i+1,
-        symbol:       COL.symbol       ? r[COL.symbol]       : null,
-        type:         COL.type         ? r[COL.type]         : null,
-        contracts:    parseNum(COL.contracts  ? r[COL.contracts]  : null),
-        strike:       parseNum(COL.strike     ? r[COL.strike]     : null),
-        startDate:    COL.startDate    ? r[COL.startDate]    : null,
-        endDate:      COL.endDate      ? r[COL.endDate]      : null,
-        duration:     parseNum(COL.duration   ? r[COL.duration]   : null),
-        dte:          parseNum(COL.dte        ? r[COL.dte]        : null),
-        fees:         parseNum(COL.fees       ? r[COL.fees]       : null),
-        premium:      parseNum(COL.premium    ? r[COL.premium]    : null),
-        premiumInit:  parseNum(COL.premiumInit  ? r[COL.premiumInit]  : null),
-        premiumFinal: parseNum(COL.premiumFinal ? r[COL.premiumFinal] : null),
-        yield:        parseNum(COL.yield      ? r[COL.yield]      : null),
-      }));
+      allTrades = rows.map((r,i) => {
+        const btcStatus = COL.btcStatus ? r[COL.btcStatus] : null;
+        const hasBTC = btcStatus && String(btcStatus).trim().toUpperCase() === 'BTC';
+        return {
+          idx:          i+1,
+          symbol:       COL.symbol       ? r[COL.symbol]       : null,
+          type:         COL.type         ? r[COL.type]         : null,
+          contracts:    parseNum(COL.contracts  ? r[COL.contracts]  : null),
+          strike:       parseNum(COL.strike     ? r[COL.strike]     : null),
+          startDate:    COL.startDate    ? r[COL.startDate]    : null,
+          endDate:      COL.endDate      ? r[COL.endDate]      : null,
+          duration:     parseNum(COL.duration   ? r[COL.duration]   : null),
+          dte:          parseNum(COL.dte        ? r[COL.dte]        : null),
+          fees:         parseNum(COL.fees       ? r[COL.fees]       : null),
+          premium:      parseNum(COL.premium    ? r[COL.premium]    : null),
+          premiumInit:  parseNum(COL.premiumInit  ? r[COL.premiumInit]  : null),
+          premiumFinal: parseNum(COL.premiumFinal ? r[COL.premiumFinal] : null),
+          yield:        parseNum(COL.yield      ? r[COL.yield]      : null),
+          btcModified:  hasBTC,
+        };
+      });
 
-      applyStoredBTCModifications(allTrades);
       renderDashboard();
     } catch(err) {
       document.getElementById('uploadStatus').textContent = '✗ Erreur de lecture du fichier';
@@ -1746,10 +1708,6 @@ function overlayDelete() {
   if(t.isManual) {
     allTrades = allTrades.filter(x => !(x.isManual && x.manualId === t.manualId));
   } else {
-    // Remove from BTC store
-    const store = loadBTCStore();
-    delete store[btcFingerprint(t)];
-    saveBTCStore(store);
     // Remove from allTrades and originalRawRows
     const tradeIdx = allTrades.indexOf(t);
     if(tradeIdx !== -1) allTrades.splice(tradeIdx, 1);
@@ -1810,18 +1768,7 @@ function overlayValidate() {
   t.btcPremium   = premBTC;
   t.btcFees      = feesBTC;
 
-  // Persist BTC modification so it survives an Excel re-import
-  if(!t.isManual) {
-    const store = loadBTCStore();
-    store[btcFingerprint(t)] = {
-      contracts, strike,
-      startDate: startRaw, endDate: endRaw, duration,
-      fees: feesTotal, premium: premInit,
-      premiumInit: premNetInit, premiumFinal: premFinalNet,
-      yield: yieldVal, btcPremium: premBTC, btcFees: feesBTC,
-    };
-    saveBTCStore(store);
-  }
+
 
   // If it's an original file row, also update the originalRawRows entry so export is consistent
   if(!t.isManual && originalCOL && originalRawRows.length > 0) {
@@ -1871,7 +1818,12 @@ function exportToExcel() {
     if(isSeq) indexCol = firstKey;
   }
 
-  const baseRows = hasOriginal ? originalRawRows.map(r=>({...r})) : [];
+  const baseRows = hasOriginal ? originalRawRows.map((r,i)=>{
+    const row = {...r};
+    const trade = allTrades[i];
+    row['Statut BTC'] = trade && trade.btcModified ? 'BTC' : '';
+    return row;
+  }) : [];
   const nextIdx  = baseRows.length + 1;
 
   // Manual trades — formatted to match original columns
@@ -1897,10 +1849,16 @@ function exportToExcel() {
       const now = new Date();          now.setHours(0,0,0,0);
       row[C.dte] = Math.max(0, Math.round((end - now) / 86400000));
     }
+    row['Statut BTC'] = t.btcModified ? 'BTC' : '';
     return row;
   });
 
   const allRows = [...baseRows, ...manualRows];
+  
+  // Add 'Statut BTC' to headers if not already present
+  if(!headers.includes('Statut BTC')) {
+    headers.push('Statut BTC');
+  }
 
   if(allRows.length === 0) {
     showFormError('Aucune donnée à exporter — chargez un fichier ou ajoutez des trades.');

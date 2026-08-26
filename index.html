@@ -960,9 +960,10 @@ function renderDashboard() {
   // Prime moyenne mensuelle = total net / (durée totale en mois)
   // Durée totale = de la 1ère ouverture à la dernière clôture (ou aujourd'hui)
   const allStartDates = trades.map(t=>toDate(t.startDate)).filter(Boolean);
-  const allEndDates   = trades.map(t=>toDate(t.endDate)).filter(Boolean);
   const firstDate = allStartDates.length ? new Date(Math.min(...allStartDates)) : today;
-  const lastDate  = allEndDates.length   ? new Date(Math.max(...allEndDates, today)) : today;
+  // Le temps écoulé s'arrête toujours à aujourd'hui : le premium est capturé dès la vente,
+  // donc on ne doit jamais étendre la période dans le futur via l'échéance d'une position ouverte.
+  const lastDate = today;
   const elapsedDays = Math.max(1, (lastDate - firstDate) / 86400000);
   const elapsedMonths = elapsedDays / 30.4375; // moyenne précise : 365.25/12
   const avgMonthlyPremium = totalNet / elapsedMonths;

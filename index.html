@@ -419,7 +419,7 @@
     </div>
     <div class="upload-zone">
       <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Charger Excel
       </button>
       <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="loadFile(event)">
@@ -447,7 +447,7 @@
           <div class="chart-sub">Les trades saisis manuellement sont ajoutés au journal · exportables via Excel</div>
         </div>
         <button class="btn-export" onclick="exportToExcel()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Exporter Excel
         </button>
       </div>
@@ -1180,7 +1180,79 @@ function renderChartCumulative(trades, avgMonthly) {
             font:{family:'JetBrains Mono',size:8}, padding:{bottom:4}},
         }
       }
-    }
+    },
+    plugins:[{
+      id: 'crosshair',
+      afterInit(chart) {
+        chart.$crosshair = { x: null, y: null };
+        const canvas = chart.canvas;
+        canvas.addEventListener('mousemove', (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          const { left, right, top, bottom } = chart.chartArea;
+          if (x >= left && x <= right && y >= top && y <= bottom) {
+            chart.$crosshair = { x, y };
+          } else {
+            chart.$crosshair = { x: null, y: null };
+          }
+          chart.draw();
+        });
+        canvas.addEventListener('mouseleave', () => {
+          chart.$crosshair = { x: null, y: null };
+          chart.draw();
+        });
+      },
+      afterDraw(chart) {
+        const { x, y } = chart.$crosshair || {};
+        if (x == null || y == null) return;
+        const { ctx, chartArea: { left, right, top, bottom }, scales } = chart;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(122, 143, 168, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        // Ligne verticale
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.stroke();
+        // Ligne horizontale
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+        ctx.stroke();
+
+        // Valeurs correspondant à la position Y
+        const cumVal  = scales.yCum  ? scales.yCum.getValueForPixel(y)  : null;
+        const barVal  = scales.yBar  ? scales.yBar.getValueForPixel(y)  : null;
+        ctx.setLineDash([]);
+        ctx.font = '400 10px JetBrains Mono, monospace';
+        ctx.textBaseline = 'middle';
+
+        if (cumVal != null && !isNaN(cumVal)) {
+          const txt = '$' + Math.round(cumVal).toLocaleString('fr-FR');
+          ctx.fillStyle = '#c9a84c';
+          ctx.textAlign = 'right';
+          // fond discret derrière le texte pour lisibilité
+          const tw = ctx.measureText(txt).width;
+          ctx.fillStyle = 'rgba(13,19,32,0.75)';
+          ctx.fillRect(left - tw - 8, y - 8, tw + 6, 16);
+          ctx.fillStyle = '#c9a84c';
+          ctx.fillText(txt, left - 4, y);
+        }
+        if (barVal != null && !isNaN(barVal)) {
+          const txt = '$' + Math.round(barVal).toLocaleString('fr-FR');
+          ctx.fillStyle = '#2ecc87';
+          ctx.textAlign = 'left';
+          const tw = ctx.measureText(txt).width;
+          ctx.fillStyle = 'rgba(13,19,32,0.75)';
+          ctx.fillRect(right + 2, y - 8, tw + 6, 16);
+          ctx.fillStyle = '#2ecc87';
+          ctx.fillText(txt, right + 5, y);
+        }
+        ctx.restore();
+      }
+    }]
   });
 }
 
@@ -1269,6 +1341,7 @@ function renderChartQuarterly(trades) {
     },
     options:{
       indexAxis:'y', responsive:true,
+      layout:{padding:{right:70}},
       plugins:{
         legend:{display:false},
         tooltip:{
@@ -1289,7 +1362,28 @@ function renderChartQuarterly(trades) {
           ticks:{color:'#f0c96e',font:{family:'JetBrains Mono',size:10,weight:'600'}}
         }
       }
-    }
+    },
+    plugins:[{
+      id:'barValueLabels',
+      afterDatasetsDraw(chart) {
+        const {ctx, data, chartArea:{right}} = chart;
+        const meta = chart.getDatasetMeta(0);
+        ctx.save();
+        ctx.font = '400 11px JetBrains Mono, monospace';
+        ctx.fillStyle = '#f0c96e'; // même doré que Premium Cumulé
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        // Colonne fixe à droite du graphique — alignement vertical comme sur la référence
+        const labelX = right + 62;
+        meta.data.forEach((bar, i) => {
+          const val = data.datasets[0].data[i];
+          if (val == null) return;
+          const txt = '$' + Math.round(val).toLocaleString('fr-FR');
+          ctx.fillText(txt, labelX, bar.y);
+        });
+        ctx.restore();
+      }
+    }]
   });
 }
 

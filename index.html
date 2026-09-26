@@ -230,6 +230,15 @@
     letter-spacing:1px; text-transform:uppercase; cursor:pointer; transition:all 0.15s;
   }
   .btn-export:hover { background:var(--green); color:var(--bg); }
+  .btn-cloud {
+    display:flex; align-items:center; gap:8px; background:transparent;
+    border:1px solid var(--gold); color:var(--gold); padding:8px 16px;
+    font-family:'Syne',sans-serif; font-size:11px; font-weight:600;
+    letter-spacing:1px; text-transform:uppercase; cursor:pointer; transition:all 0.15s;
+  }
+  .btn-cloud:hover { background:var(--gold); color:var(--bg); }
+  .btn-cloud.dirty { border-color:var(--gold); box-shadow:0 0 0 1px var(--gold); }
+  .export-btns { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .btn-delete {
     background:transparent; border:none; color:var(--text3); cursor:pointer;
     font-size:13px; padding:2px 6px; transition:color 0.15s; line-height:1;
@@ -376,7 +385,8 @@
     .form-cell-btn { grid-column: 1 / -1; padding:10px 14px; }
     .btn-add { padding:10px; font-size:12px; }
     .form-head { flex-direction:column; gap:12px; align-items:flex-start; }
-    .btn-export { width:100%; justify-content:center; }
+    .btn-export, .btn-cloud { width:100%; justify-content:center; }
+    .export-btns { width:100%; flex-direction:column; }
 
     /* (2)(3) CHARTS: single column → stack in DOM order
        Premium cumulé → Donut → Premium total ticker → Yield symbole → Durées */
@@ -456,10 +466,15 @@
           <div class="chart-title">Ajouter un Trade</div>
           <div class="chart-sub">Les trades saisis manuellement sont ajoutés au journal · exportables via Excel</div>
         </div>
-        <button class="btn-export" onclick="exportToExcel()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Exporter Excel
-        </button>
+        <div class="export-btns">
+          <button class="btn-export" onclick="exportToExcel()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Exporter Excel
+          </button>
+          <button class="btn-cloud" id="btnCloudExport" onclick="exportToCloud()">
+            ☁ Exporter Cloud
+          </button>
+        </div>
       </div>
       <div class="form-grid">
         <div class="form-cell">
@@ -975,23 +990,59 @@ function applyState(data, source) {
   }
 }
 
+let cloudDirty = false; // true = modifications locales non poussées vers Firebase
+
+function setCloudDirty(dirty) {
+  cloudDirty = dirty;
+  const btn = document.getElementById('btnCloudExport');
+  if (btn) btn.classList.toggle('dirty', !!dirty);
+}
+
 function pushStateToFirebase() {
-  if (!firebaseReady || !firebaseDb || suppressCloudPush) return;
+  if (!firebaseReady || !firebaseDb || suppressCloudPush) return Promise.resolve(false);
   const payload = serializeState();
   setCloudStatus('☁ Sync…', 'warn');
-  userRef().set(payload)
-    .then(() => setCloudStatus('☁ Synchronisé · ' + new Date(payload.updatedAt).toLocaleString('fr-FR'), 'ok'))
+  return userRef().set(payload)
+    .then(() => {
+      setCloudDirty(false);
+      setCloudStatus('☁ Synchronisé · ' + new Date(payload.updatedAt).toLocaleString('fr-FR'), 'ok');
+      return true;
+    })
     .catch(err => {
       console.warn('Firebase push error', err);
       setCloudStatus('☁ Erreur sync', 'err');
+      return false;
     });
 }
 
-/** Marque une modification locale et pousse local + cloud */
+/** Sauvegarde locale uniquement — le cloud se met à jour via « Exporter Cloud » */
 function persistState() {
   stateUpdatedAt = Date.now();
   saveLocalState();
-  pushStateToFirebase();
+  setCloudDirty(true);
+  setCloudStatus('☁ Modifs locales — cliquez Exporter Cloud', 'warn');
+}
+
+/** Bouton manuel : pousse l'état local vers Firebase */
+function exportToCloud() {
+  if (!allTrades.length) {
+    showFormError('Aucune donnée à exporter vers le cloud.');
+    return;
+  }
+  if (!firebaseReady || !firebaseDb) {
+    if (!initFirebase()) {
+      showFormError('Firebase indisponible — vérifiez la connexion.');
+      return;
+    }
+  }
+  // Assure un updatedAt frais au moment du push
+  if (!stateUpdatedAt) stateUpdatedAt = Date.now();
+  saveLocalState();
+  pushStateToFirebase().then(ok => {
+    if (ok) {
+      // feedback léger via badge déjà mis à jour
+    }
+  });
 }
 
 function startCloudListener() {
@@ -1010,6 +1061,7 @@ function startCloudListener() {
       applyState(val, 'cloud');
       saveLocalState();
       suppressCloudPush = false;
+      setCloudDirty(false);
       setCloudStatus('☁ Cloud à jour · ' + new Date(remoteAt).toLocaleString('fr-FR'), 'ok');
     }
   }, err => {
@@ -1049,22 +1101,26 @@ async function bootSync() {
       applyState(cloud, 'cloud');
       saveLocalState();
       suppressCloudPush = false;
+      setCloudDirty(false);
       setCloudStatus('☁ Cloud · ' + new Date(cloudAt).toLocaleString('fr-FR'), 'ok');
     } else if (localTrades && localTrades.length && localAt > cloudAt) {
-      // Local plus récent → pousse vers cloud
+      // Local plus récent — on n'auto-pousse pas ; l'utilisateur clique « Exporter Cloud »
       stateUpdatedAt = localAt;
-      pushStateToFirebase();
-      setCloudStatus('☁ Local poussé · ' + new Date(localAt).toLocaleString('fr-FR'), 'ok');
+      setCloudDirty(true);
+      setCloudStatus('☁ Local plus récent — cliquez Exporter Cloud', 'warn');
     } else if (cloudTrades && cloudTrades.length) {
       suppressCloudPush = true;
       applyState(cloud, 'cloud');
       saveLocalState();
       suppressCloudPush = false;
+      setCloudDirty(false);
       setCloudStatus('☁ Cloud · ' + new Date(cloudAt).toLocaleString('fr-FR'), 'ok');
     } else if (localTrades && localTrades.length) {
       stateUpdatedAt = localAt || Date.now();
-      pushStateToFirebase();
+      setCloudDirty(true);
+      setCloudStatus('☁ Local seulement — cliquez Exporter Cloud', 'warn');
     } else {
+      setCloudDirty(false);
       setCloudStatus('☁ Vide — prêt', 'ok');
       document.getElementById('placeholder').querySelector('h2').textContent = 'Aucune donnée';
       document.getElementById('placeholder').querySelector('p').textContent =

@@ -2212,7 +2212,7 @@ function exportToExcel() {
 
   const headers = hasOriginal
     ? Object.keys(originalRawRows[0])
-    : ['Symbol','Contract Type','Contracts','Strike Price','Start Date','End Date',
+    : ['#','Symbol','Contract Type','Contracts','Strike Price','Start Date','End Date',
        'Duration (Days)','Fees','Premium','Total Premium Initial','Total Premium Final','Yield'];
 
   const C = hasOriginal ? originalCOL : {
@@ -2230,6 +2230,8 @@ function exportToExcel() {
     const isSeq = firstVals.every((v,i)=> Number.isInteger(Number(v)) && Number(v) === i+1);
     if(isSeq) indexCol = firstKey;
   }
+  // Export sans fichier d'origine (Firebase / local) : toujours numéroter en 1ère colonne
+  if(!hasOriginal) indexCol = '#';
 
   function tradeToRow(t, i, nextIdxBase) {
     const row = {};

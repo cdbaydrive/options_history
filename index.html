@@ -13,6 +13,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <style>
   :root {
     --bg: #080c14;
@@ -85,6 +87,13 @@
   .upload-btn svg { width:14px; height:14px; }
   #fileInput { display:none; }
   .upload-status { font-family:'JetBrains Mono', monospace; font-size:10px; color:var(--text2); }
+  .cloud-badge {
+    font-family:'JetBrains Mono', monospace; font-size:10px; letter-spacing:1px;
+    color:var(--text2); margin-top:6px; text-align:center;
+  }
+  .cloud-badge.ok { color: var(--green); }
+  .cloud-badge.warn { color: var(--gold); }
+  .cloud-badge.err { color: var(--red); }
 
   /* ── UPLOAD PLACEHOLDER ── */
   .placeholder {
@@ -424,14 +433,15 @@
       </button>
       <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="loadFile(event)">
       <div class="upload-status" id="uploadStatus">Formats acceptés : .xlsx / .xls</div>
+      <div class="cloud-badge" id="cloudStatus">☁ Firebase…</div>
     </div>
   </div>
 
   <!-- PLACEHOLDER -->
   <div class="placeholder" id="placeholder">
     <div class="placeholder-icon">⬡</div>
-    <h2>Aucune donnée chargée</h2>
-    <p>Importez votre fichier Excel options_history.xlsx pour afficher le dashboard</p>
+    <h2>Chargement…</h2>
+    <p>Synchronisation Firebase en cours — ou importez un Excel en backup</p>
   </div>
 
   <!-- DASHBOARD -->
@@ -820,16 +830,262 @@ let allTrades = [];
 let originalRawRows = [];
 let originalCOL = {};
 let manualTradeCounter = 0;
-
-
-
-// Set default start date to today
-window.addEventListener('DOMContentLoaded', ()=>{
-  const today = new Date();
-  const iso = today.toISOString().slice(0,10);
-  document.getElementById('f_start').value = iso;
-});
+let stateUpdatedAt = 0;   // ms — horodatage de l'état local
 let charts = {};
+let suppressCloudPush = false;
+let firebaseReady = false;
+let cloudListener = null;
+
+/* ═══════════════════════════════════════════
+   FIREBASE CONFIG & INIT
+═══════════════════════════════════════════ */
+const PROFILE_ID = 'cyril';
+const LOCAL_KEY = 'options-history-state-v1';
+const firebaseConfig = {
+  apiKey: "AIzaSyAfwU-hEdT3EWwoilIuV_PGh6ViWDnc2EA",
+  authDomain: "options-history.firebaseapp.com",
+  databaseURL: "https://options-history-default-rtdb.firebaseio.com",
+  projectId: "options-history",
+  storageBucket: "options-history.firebasestorage.app",
+  messagingSenderId: "551925158031",
+  appId: "1:551925158031:web:4e29ceae3196bf0e82e0fa"
+};
+
+let firebaseApp = null;
+let firebaseDb = null;
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebaseApp = firebase.initializeApp(firebaseConfig);
+    else firebaseApp = firebase.app();
+    firebaseDb = firebase.database();
+    firebaseReady = true;
+    return true;
+  } catch (e) {
+    console.error('Firebase init error', e);
+    firebaseReady = false;
+    setCloudStatus('Firebase indisponible', 'err');
+    return false;
+  }
+}
+
+function userRef() {
+  return firebaseDb.ref('users/' + PROFILE_ID);
+}
+
+function setCloudStatus(msg, cls) {
+  const el = document.getElementById('cloudStatus');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'cloud-badge' + (cls ? ' ' + cls : '');
+}
+
+/* ═══════════════════════════════════════════
+   SERIALIZE / LOCAL PERSIST
+═══════════════════════════════════════════ */
+function normalizeTrade(t) {
+  // Dates → ISO string YYYY-MM-DD pour JSON / Firebase
+  function d(v) {
+    if (v == null || v === '') return null;
+    if (v instanceof Date) return isNaN(v) ? null : v.toISOString().slice(0, 10);
+    if (typeof v === 'number') {
+      const date = new Date((v - 25569) * 86400 * 1000);
+      return isNaN(date) ? null : date.toISOString().slice(0, 10);
+    }
+    return String(v).slice(0, 10);
+  }
+  return {
+    idx: t.idx,
+    symbol: t.symbol ?? null,
+    type: t.type ?? null,
+    contracts: t.contracts ?? null,
+    strike: t.strike ?? null,
+    startDate: d(t.startDate),
+    endDate: d(t.endDate),
+    duration: t.duration ?? null,
+    dte: t.dte ?? null,
+    fees: t.fees ?? null,
+    premium: t.premium ?? null,
+    premiumInit: t.premiumInit ?? null,
+    premiumFinal: t.premiumFinal ?? null,
+    yield: t.yield ?? null,
+    isManual: !!t.isManual,
+    manualId: t.manualId ?? null,
+    btcModified: !!t.btcModified,
+    btcPremium: t.btcPremium ?? null,
+    btcFees: t.btcFees ?? null,
+  };
+}
+
+function serializeState() {
+  return {
+    updatedAt: stateUpdatedAt || Date.now(),
+    trades: allTrades.map(normalizeTrade),
+  };
+}
+
+function saveLocalState() {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(serializeState()));
+  } catch (e) {
+    console.warn('localStorage save failed', e);
+  }
+}
+
+function loadLocalState() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.trades)) return null;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyState(data, source) {
+  // source: 'local' | 'cloud' | 'excel'
+  allTrades = (data.trades || []).map((t, i) => {
+    const n = normalizeTrade(t);
+    n.idx = n.idx || (i + 1);
+    return n;
+  });
+  // Recalcule manualTradeCounter
+  manualTradeCounter = 0;
+  allTrades.forEach(t => {
+    if (t.isManual && t.manualId && t.manualId > manualTradeCounter) {
+      manualTradeCounter = t.manualId;
+    }
+  });
+  stateUpdatedAt = data.updatedAt || Date.now();
+  // originalRawRows non restauré depuis cloud — export reconstruira depuis allTrades
+  if (source !== 'excel') {
+    originalRawRows = [];
+    originalCOL = {};
+  }
+  if (allTrades.length > 0) {
+    renderDashboard();
+  } else {
+    document.getElementById('placeholder').style.display = '';
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('placeholder').querySelector('h2').textContent = 'Aucune donnée';
+    document.getElementById('placeholder').querySelector('p').textContent =
+      'Ajoutez un trade ou importez un Excel';
+  }
+}
+
+function pushStateToFirebase() {
+  if (!firebaseReady || !firebaseDb || suppressCloudPush) return;
+  const payload = serializeState();
+  setCloudStatus('☁ Sync…', 'warn');
+  userRef().set(payload)
+    .then(() => setCloudStatus('☁ Synchronisé · ' + new Date(payload.updatedAt).toLocaleString('fr-FR'), 'ok'))
+    .catch(err => {
+      console.warn('Firebase push error', err);
+      setCloudStatus('☁ Erreur sync', 'err');
+    });
+}
+
+/** Marque une modification locale et pousse local + cloud */
+function persistState() {
+  stateUpdatedAt = Date.now();
+  saveLocalState();
+  pushStateToFirebase();
+}
+
+function startCloudListener() {
+  if (!firebaseReady || !firebaseDb) return;
+  if (cloudListener) {
+    userRef().off('value', cloudListener);
+    cloudListener = null;
+  }
+  cloudListener = userRef().on('value', snap => {
+    const val = snap.val();
+    if (!val || !Array.isArray(val.trades)) return;
+    const remoteAt = val.updatedAt || 0;
+    // Si le cloud est plus récent que le local → on l'applique
+    if (remoteAt > stateUpdatedAt) {
+      suppressCloudPush = true;
+      applyState(val, 'cloud');
+      saveLocalState();
+      suppressCloudPush = false;
+      setCloudStatus('☁ Cloud à jour · ' + new Date(remoteAt).toLocaleString('fr-FR'), 'ok');
+    }
+  }, err => {
+    console.error('Cloud listener error', err);
+    setCloudStatus('☁ Listener erreur', 'err');
+  });
+}
+
+async function bootSync() {
+  const local = loadLocalState();
+  if (local && local.trades && local.trades.length) {
+    applyState(local, 'local');
+    setCloudStatus('☁ Local chargé…', 'warn');
+  }
+
+  if (!initFirebase()) {
+    if (!local || !local.trades || !local.trades.length) {
+      document.getElementById('placeholder').querySelector('h2').textContent = 'Hors ligne';
+      document.getElementById('placeholder').querySelector('p').textContent =
+        'Firebase indisponible — importez un Excel ou ajoutez un trade';
+    }
+    return;
+  }
+
+  try {
+    setCloudStatus('☁ Connexion…', 'warn');
+    const snap = await userRef().once('value');
+    const cloud = snap.val();
+    const cloudAt = (cloud && cloud.updatedAt) ? cloud.updatedAt : 0;
+    const localAt = (local && local.updatedAt) ? local.updatedAt : 0;
+    const cloudTrades = (cloud && Array.isArray(cloud.trades)) ? cloud.trades : null;
+    const localTrades = (local && Array.isArray(local.trades)) ? local.trades : null;
+
+    if (cloudTrades && cloudTrades.length && cloudAt >= localAt) {
+      // Cloud plus récent ou égal → cloud gagne
+      suppressCloudPush = true;
+      applyState(cloud, 'cloud');
+      saveLocalState();
+      suppressCloudPush = false;
+      setCloudStatus('☁ Cloud · ' + new Date(cloudAt).toLocaleString('fr-FR'), 'ok');
+    } else if (localTrades && localTrades.length && localAt > cloudAt) {
+      // Local plus récent → pousse vers cloud
+      stateUpdatedAt = localAt;
+      pushStateToFirebase();
+      setCloudStatus('☁ Local poussé · ' + new Date(localAt).toLocaleString('fr-FR'), 'ok');
+    } else if (cloudTrades && cloudTrades.length) {
+      suppressCloudPush = true;
+      applyState(cloud, 'cloud');
+      saveLocalState();
+      suppressCloudPush = false;
+      setCloudStatus('☁ Cloud · ' + new Date(cloudAt).toLocaleString('fr-FR'), 'ok');
+    } else if (localTrades && localTrades.length) {
+      stateUpdatedAt = localAt || Date.now();
+      pushStateToFirebase();
+    } else {
+      setCloudStatus('☁ Vide — prêt', 'ok');
+      document.getElementById('placeholder').querySelector('h2').textContent = 'Aucune donnée';
+      document.getElementById('placeholder').querySelector('p').textContent =
+        'Ajoutez un trade ou importez un Excel (backup)';
+    }
+    startCloudListener();
+  } catch (e) {
+    console.error('bootSync error', e);
+    setCloudStatus('☁ Hors ligne (local)', local && local.trades && local.trades.length ? 'warn' : 'err');
+  }
+}
+
+// Set default start date + boot Firebase
+window.addEventListener('DOMContentLoaded', () => {
+  const today = new Date();
+  const iso = today.toISOString().slice(0, 10);
+  const fStart = document.getElementById('f_start');
+  if (fStart) fStart.value = iso;
+  bootSync();
+});
+
 
 function fmt$(v) { return v==null?'—':'$'+Number(v).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 function fmtPct(v) { return v==null?'—':(v*100).toFixed(2)+'%'; }
@@ -914,6 +1170,8 @@ function loadFile(e) {
         };
       });
 
+      // Import Excel = nouvelle source de vérité locale → push cloud
+      persistState();
       renderDashboard();
     } catch(err) {
       document.getElementById('uploadStatus').textContent = '✗ Erreur de lecture du fichier';
@@ -1667,6 +1925,7 @@ function handleAddTrade() {
   document.getElementById('f_premium').value   = '';
   document.getElementById('f_start').value     = new Date().toISOString().slice(0,10);
 
+  persistState();
   renderDashboard();
 }
 
@@ -1674,6 +1933,7 @@ function handleAddTrade() {
 function deleteTrade(manualId) {
   allTrades = allTrades.filter(t => !(t.isManual && t.manualId === manualId));
   allTrades.forEach((t,i)=>{ t.idx = i+1; });
+  persistState();
   renderDashboard();
 }
 
@@ -1813,6 +2073,7 @@ function overlayDelete() {
   // Re-index
   allTrades.forEach((x,i)=>{ x.idx = i+1; });
   closeOverlay();
+  persistState();
   renderDashboard();
 }
 
@@ -1885,6 +2146,7 @@ function overlayValidate() {
   }
 
   closeOverlay();
+  persistState();
   renderDashboard();
 }
 
@@ -1913,19 +2175,10 @@ function exportToExcel() {
     if(isSeq) indexCol = firstKey;
   }
 
-  const baseRows = hasOriginal ? originalRawRows.map((r,i)=>{
-    const row = {...r};
-    const trade = allTrades[i];
-    row['Statut BTC'] = trade && trade.btcModified ? 'BTC' : '';
-    return row;
-  }) : [];
-  const nextIdx  = baseRows.length + 1;
-
-  // Manual trades — formatted to match original columns
-  const manualRows = allTrades.filter(t=>t.isManual).map((t, i)=>{
+  function tradeToRow(t, i, nextIdxBase) {
     const row = {};
     headers.forEach(h=>{ row[h] = null; });
-    if(indexCol)        row[indexCol]        = nextIdx + i;
+    if(indexCol)        row[indexCol]        = (nextIdxBase != null ? nextIdxBase + i : t.idx);
     if(C.symbol)        row[C.symbol]        = t.symbol;
     if(C.type)          row[C.type]          = t.type;
     if(C.contracts)     row[C.contracts]     = t.contracts;
@@ -1938,18 +2191,31 @@ function exportToExcel() {
     if(C.premiumInit)   row[C.premiumInit]   = t.premiumInit;
     if(C.premiumFinal)  row[C.premiumFinal]  = t.premiumFinal;
     if(C.yield)         row[C.yield]         = t.yield;
-    // DTE = days from today to end date (0 if already expired)
     if(C.dte) {
-      const end = new Date(t.endDate); end.setHours(0,0,0,0);
-      const now = new Date();          now.setHours(0,0,0,0);
+      const end = new Date(String(t.endDate).slice(0,10)); end.setHours(0,0,0,0);
+      const now = new Date(); now.setHours(0,0,0,0);
       row[C.dte] = Math.max(0, Math.round((end - now) / 86400000));
     }
     row['Statut BTC'] = t.btcModified ? 'BTC' : '';
     return row;
-  });
+  }
 
-  const allRows = [...baseRows, ...manualRows];
-  
+  let allRows;
+  if (hasOriginal) {
+    const baseRows = originalRawRows.map((r,i)=>{
+      const row = {...r};
+      const trade = allTrades[i];
+      row['Statut BTC'] = trade && trade.btcModified ? 'BTC' : '';
+      return row;
+    });
+    const nextIdx = baseRows.length + 1;
+    const manualRows = allTrades.filter(t=>t.isManual).map((t,i)=> tradeToRow(t, i, nextIdx));
+    allRows = [...baseRows, ...manualRows];
+  } else {
+    // Depuis Firebase / local uniquement : exporter tous les trades
+    allRows = allTrades.map((t,i)=> tradeToRow(t, i, 1));
+  }
+
   // Add 'Statut BTC' to headers if not already present
   if(!headers.includes('Statut BTC')) {
     headers.push('Statut BTC');

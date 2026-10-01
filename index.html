@@ -479,7 +479,8 @@
       <div class="form-grid">
         <div class="form-cell">
           <div class="form-label">Ticker</div>
-          <input id="f_symbol" class="form-input" type="text" placeholder="PLTR" style="text-transform:uppercase">
+          <input id="f_symbol" class="form-input" type="text" placeholder="PLTR" style="text-transform:uppercase" list="knownTickers" autocomplete="off" spellcheck="false" maxlength="12">
+          <datalist id="knownTickers"></datalist>
         </div>
         <div class="form-cell">
           <div class="form-label">Type</div>
@@ -556,6 +557,82 @@
         <div class="kpi-label">Positions Ouvertes</div>
         <div class="kpi-value white" id="kpiOpen">—</div>
         <div class="kpi-sub" id="kpiOpenSub">—</div>
+      </div>
+    </div>
+
+    <!-- PERFORMANCE BTC -->
+    <div class="section-head"><div class="section-line"></div><div class="section-label">Performance BTC</div><div class="section-line"></div></div>
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1px" id="btcKpiGrid">
+      <div class="kpi-cell gold">
+        <div class="kpi-label">BTC Total</div>
+        <div class="kpi-value gold" id="btcKpiCount">—</div>
+        <div class="kpi-sub" id="btcKpiCountSub">—</div>
+      </div>
+      <div class="kpi-cell blue">
+        <div class="kpi-label">% BTC vs Naturel</div>
+        <div class="kpi-value blue" id="btcKpiPct">—</div>
+        <div class="kpi-sub" id="btcKpiPctSub">trades clôturés</div>
+      </div>
+      <div class="kpi-cell green">
+        <div class="kpi-label">Δ Yield Ann. Moyen</div>
+        <div class="kpi-value green" id="btcKpiDelta">—</div>
+        <div class="kpi-sub" id="btcKpiDeltaSub">BTC vs hold (pp)</div>
+      </div>
+      <div class="kpi-cell gold">
+        <div class="kpi-label">Détails complets</div>
+        <div class="kpi-value white" id="btcKpiDetail">—</div>
+        <div class="kpi-sub">BTC avec snapshot avant/après</div>
+      </div>
+    </div>
+    <div class="charts-row two" style="margin-bottom:24px">
+      <div class="table-card">
+        <div class="table-head-bar">
+          <div>
+            <div class="chart-title">BTC par mois</div>
+            <div class="chart-sub">Trades clôturés — volume et amélioration de yield</div>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:280px">
+          <table>
+            <thead>
+              <tr>
+                <th>Mois</th>
+                <th>Clôturés</th>
+                <th>BTC</th>
+                <th>% BTC</th>
+                <th>Yield ann. réel</th>
+                <th>Yield ann. hold</th>
+                <th>Δ Yield</th>
+              </tr>
+            </thead>
+            <tbody id="btcMonthBody"></tbody>
+            <tfoot id="btcMonthFoot" style="font-weight:700;color:var(--gold)"></tfoot>
+          </table>
+        </div>
+      </div>
+      <div class="table-card">
+        <div class="table-head-bar">
+          <div>
+            <div class="chart-title">BTC par ticker</div>
+            <div class="chart-sub">Même métriques agrégées par symbole</div>
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:280px">
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Clôturés</th>
+                <th>BTC</th>
+                <th>% BTC</th>
+                <th>Yield ann. réel</th>
+                <th>Yield ann. hold</th>
+                <th>Δ Yield</th>
+              </tr>
+            </thead>
+            <tbody id="btcTickerBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -929,6 +1006,9 @@ function normalizeTrade(t) {
     btcModified: !!t.btcModified,
     btcPremium: t.btcPremium ?? null,
     btcFees: t.btcFees ?? null,
+    btcDate: d(t.btcDate),
+    originalEndDate: d(t.originalEndDate),
+    originalDuration: t.originalDuration ?? null,
   };
 }
 
@@ -987,6 +1067,7 @@ function applyState(data, source) {
     document.getElementById('placeholder').querySelector('h2').textContent = 'Aucune donnée';
     document.getElementById('placeholder').querySelector('p').textContent =
       'Ajoutez un trade ou importez un Excel';
+    updateTickerDatalist();
   }
 }
 
@@ -1021,6 +1102,7 @@ function persistState() {
   saveLocalState();
   setCloudDirty(true);
   setCloudStatus('☁ Modifs locales — cliquez Exporter Cloud', 'warn');
+  updateTickerDatalist();
 }
 
 /** Bouton manuel : pousse l'état local vers Firebase */
@@ -1139,6 +1221,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const iso = today.toISOString().slice(0, 10);
   const fStart = document.getElementById('f_start');
   if (fStart) fStart.value = iso;
+  attachSymbolInputNormalization();
+  updateTickerDatalist();
   bootSync();
 });
 
@@ -1318,6 +1402,7 @@ function renderDashboard() {
   // Table subtitle
   document.getElementById('tableSubtitle').textContent = `${trades.length} trades · ordre chronologique décroissant`;
 
+  renderBtcPerformance(trades);
   renderChartCumulative(trades, avgMonthlyPremium);
   renderChartDonut(trades);
   renderChartQuarterly(trades);
@@ -1325,6 +1410,140 @@ function renderDashboard() {
   renderChartDuration(trades);
   renderSymGrid(trades);
   renderTable(trades);
+  updateTickerDatalist();
+}
+
+/** Section Performance BTC — purement additive, n'altère aucun autre calcul */
+function renderBtcPerformance(trades) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  function toDate(v) {
+    if(!v) return null;
+    if(v instanceof Date) return v;
+    const d = new Date(String(v).slice(0,10));
+    return isNaN(d) ? null : d;
+  }
+  function netP(t) {
+    return (t.premiumFinal !== null && t.premiumFinal !== undefined) ? t.premiumFinal : (t.premiumInit || 0);
+  }
+  const closed = trades.filter(t => {
+    const d = toDate(t.endDate);
+    return !d || d <= today;
+  });
+  const btcAll = closed.filter(t => t.btcModified);
+  const btcDetail = btcAll.filter(t =>
+    t.originalDuration != null && t.originalDuration > 0 &&
+    t.duration != null && t.duration > 0 &&
+    t.strike && t.contracts
+  );
+
+  function annYield(premiumNet, notional, days) {
+    if(!notional || notional <= 0 || !days || days <= 0) return null;
+    return (premiumNet / notional) * (365 / days);
+  }
+
+  function tradeYields(t) {
+    const notional = (t.strike || 0) * (t.contracts || 0) * 100;
+    const yReal = annYield(netP(t), notional, t.duration);
+    const yHold = annYield(t.premiumInit || 0, notional, t.originalDuration);
+    return { yReal, yHold, delta: (yReal != null && yHold != null) ? yReal - yHold : null };
+  }
+
+  const nClosed = closed.length;
+  const nBtc = btcAll.length;
+  const pctBtc = nClosed > 0 ? nBtc / nClosed : 0;
+  const deltas = btcDetail.map(t => tradeYields(t).delta).filter(d => d != null);
+  const avgDelta = deltas.length ? deltas.reduce((s,d)=>s+d,0) / deltas.length : null;
+
+  document.getElementById('btcKpiCount').textContent = nBtc;
+  document.getElementById('btcKpiCountSub').textContent =
+    nBtc === 0 ? 'aucun BTC' : `${nBtc} sur ${nClosed} clôturés`;
+  document.getElementById('btcKpiPct').textContent = nClosed > 0 ? (pctBtc * 100).toFixed(1) + '%' : '—';
+  const deltaEl = document.getElementById('btcKpiDelta');
+  if(avgDelta == null) {
+    deltaEl.textContent = '—';
+    deltaEl.style.color = 'var(--text3)';
+  } else {
+    deltaEl.textContent = (avgDelta >= 0 ? '+' : '') + (avgDelta * 100).toFixed(2) + ' pp';
+    deltaEl.style.color = avgDelta >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+  document.getElementById('btcKpiDetail').textContent = btcDetail.length + ' / ' + nBtc;
+
+  function monthKey(t) {
+    const d = toDate(t.btcDate) || toDate(t.endDate) || toDate(t.startDate);
+    if(!d) return null;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  function aggregate(items, keyFn) {
+    const map = {};
+    items.forEach(t => {
+      const k = keyFn(t);
+      if(!k) return;
+      if(!map[k]) map[k] = { closed:0, btc:0, detail:[], yRealSum:0, yHoldSum:0, nYield:0 };
+      map[k].closed++;
+      if(t.btcModified) {
+        map[k].btc++;
+        if(t.originalDuration != null && t.originalDuration > 0 && t.duration > 0 && t.strike && t.contracts) {
+          const y = tradeYields(t);
+          if(y.yReal != null && y.yHold != null) {
+            map[k].detail.push(t);
+            map[k].yRealSum += y.yReal;
+            map[k].yHoldSum += y.yHold;
+            map[k].nYield++;
+          }
+        }
+      }
+    });
+    return map;
+  }
+
+  function rowHtml(label, r) {
+    const pct = r.closed > 0 ? (r.btc / r.closed * 100).toFixed(1) + '%' : '—';
+    let yReal = '—', yHold = '—', delta = '—', deltaCls = '';
+    if(r.nYield > 0) {
+      const ar = r.yRealSum / r.nYield;
+      const ah = r.yHoldSum / r.nYield;
+      const ad = ar - ah;
+      yReal = (ar * 100).toFixed(2) + '%';
+      yHold = (ah * 100).toFixed(2) + '%';
+      delta = (ad >= 0 ? '+' : '') + (ad * 100).toFixed(2) + ' pp';
+      deltaCls = ad >= 0 ? 'pos' : 'neg';
+    }
+    return `<tr>
+      <td style="color:var(--text);font-weight:600">${label}</td>
+      <td style="color:var(--text2)">${r.closed}</td>
+      <td style="color:var(--gold2)">${r.btc}</td>
+      <td style="color:var(--text2)">${pct}</td>
+      <td style="color:var(--text2)">${yReal}</td>
+      <td style="color:var(--text3)">${yHold}</td>
+      <td class="${deltaCls}" style="font-weight:600">${delta}</td>
+    </tr>`;
+  }
+
+  const byMonth = aggregate(closed, monthKey);
+  const months = Object.keys(byMonth).sort();
+  document.getElementById('btcMonthBody').innerHTML = months.length
+    ? months.map(m => rowHtml(m, byMonth[m])).join('')
+    : '<tr><td colspan="7" style="color:var(--text3);text-align:center">Aucune donnée</td></tr>';
+
+  const totM = { closed:nClosed, btc:nBtc, yRealSum:0, yHoldSum:0, nYield:0 };
+  btcDetail.forEach(t => {
+    const y = tradeYields(t);
+    if(y.yReal != null && y.yHold != null) {
+      totM.yRealSum += y.yReal;
+      totM.yHoldSum += y.yHold;
+      totM.nYield++;
+    }
+  });
+  document.getElementById('btcMonthFoot').innerHTML = months.length
+    ? rowHtml('TOTAL', totM).replace('<tr>','<tr style="border-top:1px solid var(--border)">')
+    : '';
+
+  const byTicker = aggregate(closed, t => (t.symbol || '').toUpperCase());
+  const tickers = Object.entries(byTicker).sort((a,b) => b[1].btc - a[1].btc || a[0].localeCompare(b[0]));
+  document.getElementById('btcTickerBody').innerHTML = tickers.length
+    ? tickers.map(([sym, r]) => rowHtml(sym, r)).join('')
+    : '<tr><td colspan="7" style="color:var(--text3);text-align:center">Aucune donnée</td></tr>';
 }
 
 function getQ(dateStr) {
@@ -1697,6 +1916,41 @@ function renderChartQuarterly(trades) {
         });
         ctx.restore();
       }
+    },{
+      id: 'hCrosshair',
+      afterInit(chart) {
+        chart.$hCrosshair = { y: null };
+        const canvas = chart.canvas;
+        canvas.addEventListener('mousemove', (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const y = e.clientY - rect.top;
+          const { top, bottom } = chart.chartArea;
+          if (y >= top && y <= bottom) {
+            chart.$hCrosshair = { y };
+          } else {
+            chart.$hCrosshair = { y: null };
+          }
+          chart.draw();
+        });
+        canvas.addEventListener('mouseleave', () => {
+          chart.$hCrosshair = { y: null };
+          chart.draw();
+        });
+      },
+      afterDraw(chart) {
+        const { y } = chart.$hCrosshair || {};
+        if (y == null) return;
+        const { ctx, chartArea: { left, right, top, bottom } } = chart;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(122, 143, 168, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+        ctx.stroke();
+        ctx.restore();
+      }
     }]
   });
 }
@@ -1741,6 +1995,7 @@ function renderChartYield(trades) {
     },
     options:{
       indexAxis:'y', responsive:true,
+      layout:{padding:{right:70}},
       plugins:{
         legend:{display:false},
         tooltip:{
@@ -1754,7 +2009,62 @@ function renderChartYield(trades) {
         x:{grid:{color:'rgba(30,45,69,0.4)'},ticks:{color:'#4a5f78',font:{family:'JetBrains Mono',size:9},callback:v=>v+'%'}},
         y:{grid:{display:false},ticks:{color:'#c9a84c',font:{family:'JetBrains Mono',size:10,weight:'600'}}}
       }
-    }
+    },
+    plugins:[{
+      id:'yieldValueLabels',
+      afterDatasetsDraw(chart) {
+        const {ctx, data, chartArea:{right}} = chart;
+        const meta = chart.getDatasetMeta(0);
+        ctx.save();
+        ctx.font = '400 11px JetBrains Mono, monospace';
+        ctx.fillStyle = '#f0c96e';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        const labelX = right + 62;
+        meta.data.forEach((bar, i) => {
+          const val = data.datasets[0].data[i];
+          if (val == null) return;
+          const txt = val.toFixed(2) + '%';
+          ctx.fillText(txt, labelX, bar.y);
+        });
+        ctx.restore();
+      }
+    },{
+      id: 'hCrosshair',
+      afterInit(chart) {
+        chart.$hCrosshair = { y: null };
+        const canvas = chart.canvas;
+        canvas.addEventListener('mousemove', (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const y = e.clientY - rect.top;
+          const { top, bottom } = chart.chartArea;
+          if (y >= top && y <= bottom) {
+            chart.$hCrosshair = { y };
+          } else {
+            chart.$hCrosshair = { y: null };
+          }
+          chart.draw();
+        });
+        canvas.addEventListener('mouseleave', () => {
+          chart.$hCrosshair = { y: null };
+          chart.draw();
+        });
+      },
+      afterDraw(chart) {
+        const { y } = chart.$hCrosshair || {};
+        if (y == null) return;
+        const { ctx, chartArea: { left, right } } = chart;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(122, 143, 168, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(right, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }]
   });
 }
 
@@ -1924,8 +2234,115 @@ function showFormError(msg) {
   setTimeout(()=>{ el.style.display='none'; }, 4000);
 }
 
+/* ── Ticker helpers (normalization, datalist, Levenshtein) ── */
+function getKnownTickers() {
+  const set = new Set();
+  (allTrades || []).forEach(t => {
+    if (t && t.symbol) {
+      const s = String(t.symbol).trim().toUpperCase();
+      if (s) set.add(s);
+    }
+  });
+  return Array.from(set).sort();
+}
+
+function updateTickerDatalist() {
+  const dl = document.getElementById('knownTickers');
+  if (!dl) return;
+  const tickers = getKnownTickers();
+  dl.innerHTML = tickers.map(s => `<option value="${s}"></option>`).join('');
+}
+
+function normalizeSymbolLive(raw) {
+  return String(raw || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9.]/g, '');
+}
+
+function attachSymbolInputNormalization() {
+  const el = document.getElementById('f_symbol');
+  if (!el || el._tickerNormAttached) return;
+  el._tickerNormAttached = true;
+  el.addEventListener('input', () => {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const before = el.value;
+    const after = normalizeSymbolLive(before);
+    if (before !== after) {
+      el.value = after;
+      // Preserve caret as best effort after filtering
+      const delta = before.length - after.length;
+      const pos = Math.max(0, (start || 0) - delta);
+      try { el.setSelectionRange(pos, pos); } catch (_) {}
+    }
+  });
+  el.addEventListener('blur', () => {
+    el.value = normalizeSymbolLive(el.value);
+  });
+}
+
+function levenshtein(a, b) {
+  a = String(a); b = String(b);
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+/** Closest known ticker with distance ≤ maxDist, or null. Prefer exact length ties. */
+function findClosestTicker(symbol, maxDist) {
+  if (maxDist == null) maxDist = 1;
+  const known = getKnownTickers();
+  let best = null;
+  let bestDist = Infinity;
+  for (const k of known) {
+    const d = levenshtein(symbol, k);
+    if (d < bestDist || (d === bestDist && best && k.length === symbol.length && best.length !== symbol.length)) {
+      bestDist = d;
+      best = k;
+    }
+  }
+  return bestDist <= maxDist ? best : null;
+}
+
+/**
+ * Resolve ticker with user confirmation for unknown / near-miss symbols.
+ * Returns the final symbol string, or null if the user cancelled.
+ */
+function resolveTickerWithConfirm(symbol) {
+  const known = getKnownTickers();
+  if (known.includes(symbol)) return symbol;
+
+  const closest = findClosestTicker(symbol, 1);
+  if (closest) {
+    const useExisting = confirm(
+      `Ticker « ${symbol} » inconnu.\nUtiliser plutôt « ${closest} » ?\n\n` +
+      `OK = utiliser ${closest}\nAnnuler = garder ${symbol} (nouveau ticker)`
+    );
+    return useExisting ? closest : symbol;
+  }
+
+  const okNew = confirm(`Nouveau ticker « ${symbol} » ?\n\nOK = confirmer\nAnnuler = annuler l'ajout`);
+  return okNew ? symbol : null;
+}
+
 function handleAddTrade() {
-  const symbol    = document.getElementById('f_symbol').value.trim().toUpperCase();
+  attachSymbolInputNormalization();
+  let symbol = normalizeSymbolLive(document.getElementById('f_symbol').value.trim());
+  document.getElementById('f_symbol').value = symbol;
+
   const type      = document.getElementById('f_type').value;
   const contracts = parseFloat(document.getElementById('f_contracts').value);
   const strike    = parseFloat(document.getElementById('f_strike').value);
@@ -1941,6 +2358,12 @@ function handleAddTrade() {
   if(!endRaw)             return showFormError('Date de fin manquante.');
   if(isNaN(premium) || premium <= 0) return showFormError('Prime invalide.');
   if(endRaw < startRaw)   return showFormError('La date de fin doit être après la date de début.');
+
+  // Validation ticker : connu / voisin Levenshtein ≤ 1 / nouveau
+  const resolved = resolveTickerWithConfirm(symbol);
+  if (resolved === null) return; // utilisateur a annulé
+  symbol = resolved;
+  document.getElementById('f_symbol').value = symbol;
 
   const startDate = new Date(startRaw);
   const endDate   = new Date(endRaw);
@@ -1995,6 +2418,7 @@ function deleteTrade(manualId) {
 
 // ── OVERLAY LOGIC ────────────────────────────────────────────────────────────
 let overlayTradeKey = null; // "m_<manualId>" or "r_<idx>"
+let overlayOriginalEnd = null; // expiration prévue au moment de l'ouverture de l'overlay
 
 function findTradeByKey(key) {
   if(key.startsWith('m_')) {
@@ -2011,6 +2435,11 @@ function openOverlay(key) {
   if(!t) return;
   overlayTradeKey = key;
 
+  // Expiration prévue : si déjà BTC on garde originalEndDate, sinon endDate actuelle
+  overlayOriginalEnd = (t.btcModified && t.originalEndDate)
+    ? fmtDate(t.originalEndDate)
+    : (t.endDate ? fmtDate(t.endDate) : null);
+
   // Read-only fields
   document.getElementById('ov_idx').textContent    = '#' + t.idx;
   document.getElementById('ov_symbol').textContent = t.symbol || '—';
@@ -2025,6 +2454,18 @@ function openOverlay(key) {
   document.getElementById('ov_premium_btc').value  = t.btcPremium ?? '';
   document.getElementById('ov_fees_init').value = t.fees ?? '';
   document.getElementById('ov_fees_btc').value  = t.btcFees ?? '';
+
+  // Contrainte date : BTC < expiration prévue et ≤ aujourd'hui
+  const endInput = document.getElementById('ov_end');
+  const todayIso = new Date().toISOString().slice(0, 10);
+  let maxIso = todayIso;
+  if(overlayOriginalEnd) {
+    const d = new Date(overlayOriginalEnd);
+    d.setDate(d.getDate() - 1);
+    const dayBefore = d.toISOString().slice(0, 10);
+    if(dayBefore < maxIso) maxIso = dayBefore;
+  }
+  endInput.max = maxIso;
 
   // Reset preview
   document.getElementById('overlayPreview').classList.remove('visible');
@@ -2043,6 +2484,7 @@ function openOverlay(key) {
 function closeOverlay() {
   document.getElementById('btcOverlay').classList.remove('open');
   overlayTradeKey = null;
+  overlayOriginalEnd = null;
 }
 
 function overlayBackdropClick(e) {
@@ -2156,6 +2598,27 @@ function overlayValidate() {
     alert('Dates invalides.'); return;
   }
 
+  // BTC ferme la position → date ≤ aujourd'hui
+  const today = new Date(); today.setHours(0,0,0,0);
+  endDate.setHours(0,0,0,0);
+  if(endDate > today) {
+    alert('Un BTC ferme la position : la date de fin doit être aujourd\'hui ou antérieure.');
+    return;
+  }
+
+  // Date BTC strictement antérieure à l'expiration prévue initiale
+  const plannedEndStr = (t.btcModified && t.originalEndDate)
+    ? fmtDate(t.originalEndDate)
+    : (overlayOriginalEnd || (t.endDate ? fmtDate(t.endDate) : null));
+  if(plannedEndStr) {
+    const planned = new Date(plannedEndStr);
+    planned.setHours(0,0,0,0);
+    if(endDate >= planned) {
+      alert('La date de BTC doit être antérieure à l\'expiration prévue (' + plannedEndStr + ').');
+      return;
+    }
+  }
+
   const duration      = Math.round((endDate - startDate) / 86400000);
   const premFinalUnit = premInit - premBTC;
   const feesTotal     = feesInit + feesBTC;
@@ -2164,6 +2627,22 @@ function overlayValidate() {
   const notional      = strike * contracts * 100;
   const yieldVal      = notional > 0 ? premFinalUnit * contracts * 100 / notional : null;
   const premNetInit   = premInitTotal - feesInit;
+
+  // Premier BTC : capturer le snapshot « avant »
+  if(!t.btcModified) {
+    const origEnd = plannedEndStr || (t.endDate ? fmtDate(t.endDate) : null);
+    t.originalEndDate = origEnd;
+    if(t.duration != null && t.duration !== '') {
+      t.originalDuration = t.duration;
+    } else if(t.startDate && origEnd) {
+      const s = new Date(fmtDate(t.startDate));
+      const e = new Date(origEnd);
+      s.setHours(0,0,0,0); e.setHours(0,0,0,0);
+      t.originalDuration = Math.round((e - s) / 86400000);
+    } else {
+      t.originalDuration = null;
+    }
+  }
 
   // Mutate the trade in place — idx stays the same
   t.contracts    = contracts;
@@ -2179,6 +2658,7 @@ function overlayValidate() {
   t.btcModified  = true;
   t.btcPremium   = premBTC;
   t.btcFees      = feesBTC;
+  t.btcDate      = endRaw;
 
 
 
@@ -2233,6 +2713,15 @@ function exportToExcel() {
   // Export sans fichier d'origine (Firebase / local) : toujours numéroter en 1ère colonne
   if(!hasOriginal) indexCol = '#';
 
+  function fillBtcCols(row, t) {
+    row['Statut BTC'] = t && t.btcModified ? 'BTC' : '';
+    row['Date BTC'] = (t && t.btcDate) ? fmtDate(t.btcDate) : '';
+    row['Prime BTC / contrat'] = (t && t.btcPremium != null) ? t.btcPremium : '';
+    row['Frais BTC'] = (t && t.btcFees != null) ? t.btcFees : '';
+    row['Expiration prévue'] = (t && t.originalEndDate) ? fmtDate(t.originalEndDate) : '';
+    row['Durée prévue (j)'] = (t && t.originalDuration != null) ? t.originalDuration : '';
+  }
+
   function tradeToRow(t, i, nextIdxBase) {
     const row = {};
     headers.forEach(h=>{ row[h] = null; });
@@ -2254,7 +2743,7 @@ function exportToExcel() {
       const now = new Date(); now.setHours(0,0,0,0);
       row[C.dte] = Math.max(0, Math.round((end - now) / 86400000));
     }
-    row['Statut BTC'] = t.btcModified ? 'BTC' : '';
+    fillBtcCols(row, t);
     return row;
   }
 
@@ -2263,7 +2752,7 @@ function exportToExcel() {
     const baseRows = originalRawRows.map((r,i)=>{
       const row = {...r};
       const trade = allTrades[i];
-      row['Statut BTC'] = trade && trade.btcModified ? 'BTC' : '';
+      fillBtcCols(row, trade);
       return row;
     });
     const nextIdx = baseRows.length + 1;
@@ -2274,10 +2763,9 @@ function exportToExcel() {
     allRows = allTrades.map((t,i)=> tradeToRow(t, i, 1));
   }
 
-  // Add 'Statut BTC' to headers if not already present
-  if(!headers.includes('Statut BTC')) {
-    headers.push('Statut BTC');
-  }
+  // Colonnes BTC systématiques
+  const btcHeaders = ['Statut BTC','Date BTC','Prime BTC / contrat','Frais BTC','Expiration prévue','Durée prévue (j)'];
+  btcHeaders.forEach(h => { if(!headers.includes(h)) headers.push(h); });
 
   if(allRows.length === 0) {
     showFormError('Aucune donnée à exporter — chargez un fichier ou ajoutez des trades.');

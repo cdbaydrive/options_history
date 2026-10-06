@@ -15,6 +15,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <style>
   :root {
     --bg: #080c14;
@@ -94,6 +95,48 @@
   .cloud-badge.ok { color: var(--green); }
   .cloud-badge.warn { color: var(--gold); }
   .cloud-badge.err { color: var(--red); }
+  #footer-settings {
+    text-align:center; padding:28px 16px 12px; margin-top:8px;
+  }
+  #settings-link {
+    color:var(--text2); font-family:'Syne', sans-serif;
+    font-size:13px; font-weight:500; text-decoration:none; cursor:pointer;
+    background:transparent; border:none; padding:0;
+  }
+  #settings-link:hover { color:var(--gold); text-decoration:underline; }
+  .settings-overlay {
+    position:fixed; inset:0; background:rgba(8,12,20,0.62);
+    display:none; align-items:center; justify-content:center;
+    z-index:90; padding:16px;
+  }
+  .settings-overlay.open { display:flex; }
+  .settings-modal {
+    background:var(--bg2); border:1px solid var(--border); border-radius:14px;
+    padding:18px; width:min(360px, 100%); position:relative;
+    box-shadow:0 18px 40px rgba(0,0,0,0.45);
+  }
+  .settings-close {
+    position:absolute; top:8px; right:10px; background:none; border:none;
+    color:var(--text2); font-size:22px; cursor:pointer; line-height:1;
+  }
+  .settings-close:hover { color:var(--text); }
+  .settings-modal h3 { color:var(--gold); font-size:16px; margin-bottom:10px; }
+  .auth-status { font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--text2); margin-bottom:10px; }
+  .auth-status.on { color:#047857; }
+  .auth-login-form { display:flex; flex-direction:column; gap:8px; }
+  .auth-login-form input {
+    background:var(--bg); border:1px solid var(--border); color:var(--text);
+    padding:10px; font-family:'JetBrains Mono', monospace; font-size:12px; outline:none; border-radius:8px;
+  }
+  .auth-login-form input:focus { border-color: var(--gold); }
+  .auth-login-form button, .auth-logout {
+    background:transparent; border:1px solid var(--gold); color:var(--gold);
+    padding:10px; font-family:'Syne', sans-serif; font-size:12px; font-weight:600;
+    letter-spacing:1px; text-transform:uppercase; cursor:pointer; border-radius:8px;
+  }
+  .auth-login-form button:hover, .auth-logout:hover { background:var(--gold); color:var(--bg); }
+  .auth-error { font-family:'JetBrains Mono', monospace; font-size:11px; color:var(--red); min-height:1.2em; }
+  .auth-hint { font-size:11px; color:var(--text2); margin-top:6px; }
 
   /* ── UPLOAD PLACEHOLDER ── */
   .placeholder {
@@ -443,7 +486,23 @@
       </button>
       <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="loadFile(event)">
       <div class="upload-status" id="uploadStatus">Formats acceptés : .xlsx / .xls</div>
-      <div class="cloud-badge" id="cloudStatus">☁ Firebase…</div>
+      <div class="cloud-badge" id="cloudStatus">☁ En attente de connexion</div>
+    </div>
+  </div>
+
+  <div id="settings-overlay" class="settings-overlay" onclick="if(event.target===this)closeSettingsOverlay()">
+    <div class="settings-modal">
+      <button type="button" class="settings-close" onclick="closeSettingsOverlay()" aria-label="Fermer">×</button>
+      <h3>Réglages</h3>
+      <div class="auth-status" id="auth-status">Non connecté</div>
+      <form class="auth-login-form" id="auth-login-form" onsubmit="submitAuthLogin(); return false;">
+        <input type="email" id="auth-email" placeholder="Email" autocomplete="username" inputmode="email">
+        <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password">
+        <button type="submit">Se connecter</button>
+      </form>
+      <p class="auth-error" id="auth-login-error"></p>
+      <button type="button" class="auth-logout" id="auth-logout-btn" hidden onclick="submitAuthLogout()">Se déconnecter</button>
+      <p class="auth-hint">Une fois par appareil. La session reste ouverte.</p>
     </div>
   </div>
 
@@ -915,6 +974,10 @@
     </div>
   </div>
 
+  <div id="footer-settings">
+    <button type="button" id="settings-link" onclick="openSettingsOverlay()">Réglages</button>
+  </div>
+
 </div><!-- container -->
 
 <script>
@@ -945,12 +1008,28 @@ const firebaseConfig = {
 
 let firebaseApp = null;
 let firebaseDb = null;
+let firebaseAuth = null;
+let currentAuthUser = null;
+let currentRole = null;       // 'admin' | 'membre' | null — lu dans /roles/{uid}
+let authReady = false;
+let authListenerStarted = false;
+let authPersistenceSet = false;
+
+function isAdmin() { return currentRole === 'admin'; }
+function canRead() { return currentRole === 'admin' || currentRole === 'membre'; }
 
 function initFirebase() {
   try {
     if (!firebase.apps.length) firebaseApp = firebase.initializeApp(firebaseConfig);
     else firebaseApp = firebase.app();
     firebaseDb = firebase.database();
+    firebaseAuth = firebase.auth();
+    if (!authPersistenceSet) {
+      authPersistenceSet = true;
+      firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => {
+        console.warn('Auth persistence', err);
+      });
+    }
     firebaseReady = true;
     return true;
   } catch (e) {
@@ -959,6 +1038,107 @@ function initFirebase() {
     setCloudStatus('Firebase indisponible', 'err');
     return false;
   }
+}
+
+function resolveRole(uid) {
+  return firebaseDb.ref('roles/' + uid).once('value').then(snap => snap.val() || null);
+}
+
+function authErrorMessage(err) {
+  const code = err && err.code ? err.code : '';
+  if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') return 'Email ou mot de passe incorrect.';
+  if (code === 'auth/too-many-requests') return 'Trop de tentatives. Réessaie plus tard.';
+  if (code === 'auth/invalid-email') return 'Email invalide.';
+  return (err && err.message) ? err.message : 'Connexion impossible.';
+}
+
+function openSettingsOverlay() {
+  document.getElementById('settings-overlay').classList.add('open');
+}
+function closeSettingsOverlay() {
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function updateAuthUI() {
+  const status = document.getElementById('auth-status');
+  const form = document.getElementById('auth-login-form');
+  const logoutBtn = document.getElementById('auth-logout-btn');
+  const exportBtn = document.getElementById('btnCloudExport');
+  const connected = !!currentAuthUser;
+  const on = connected && canRead();
+  if (form) form.hidden = connected;
+  if (logoutBtn) logoutBtn.hidden = !connected;
+  if (status) {
+    status.textContent = !connected
+      ? 'Non connecté'
+      : ('Connecté' + (currentAuthUser.email ? ' · ' + currentAuthUser.email : '') + (isAdmin() ? ' · admin' : currentRole === 'membre' ? ' · lecture' : ' · sans rôle'));
+    status.classList.toggle('on', on);
+  }
+  if (exportBtn) exportBtn.disabled = !isAdmin();
+}
+
+function stopCloud() {
+  if (firebaseDb && cloudListener) {
+    try { userRef().off('value', cloudListener); } catch (_) {}
+    cloudListener = null;
+  }
+}
+
+function startAuthListener() {
+  if (authListenerStarted) return;
+  if (!initFirebase() || !firebaseAuth) return;
+  authListenerStarted = true;
+  firebaseAuth.onAuthStateChanged(user => {
+    currentAuthUser = user || null;
+    currentRole = null;
+    authReady = true;
+    if (!user) {
+      stopCloud();
+      updateAuthUI();
+      setCloudStatus('☁ Connecte-toi pour le cloud', 'warn');
+      return;
+    }
+    resolveRole(user.uid).then(role => {
+      if (!currentAuthUser || currentAuthUser.uid !== user.uid) return;
+      currentRole = role;
+      updateAuthUI();
+      if (canRead()) bootSync();
+      else setCloudStatus('☁ Compte sans rôle', 'err');
+    }).catch(err => {
+      console.warn('resolveRole', err);
+      updateAuthUI();
+      setCloudStatus('☁ Rôle illisible', 'err');
+    });
+  });
+}
+
+function submitAuthLogin() {
+  const emailEl = document.getElementById('auth-email');
+  const passEl = document.getElementById('auth-password');
+  const errEl = document.getElementById('auth-login-error');
+  const email = (emailEl && emailEl.value || '').trim();
+  const password = passEl ? passEl.value : '';
+  if (!email || !password) {
+    if (errEl) errEl.textContent = 'Email et mot de passe requis.';
+    return;
+  }
+  if (!initFirebase() || !firebaseAuth) {
+    if (errEl) errEl.textContent = 'Firebase Auth indisponible.';
+    return;
+  }
+  if (errEl) errEl.textContent = 'Connexion…';
+  firebaseAuth.signInWithEmailAndPassword(email, password).then(() => {
+    if (passEl) passEl.value = '';
+    if (errEl) errEl.textContent = '';
+  }).catch(err => {
+    if (errEl) errEl.textContent = authErrorMessage(err);
+  });
+}
+
+function submitAuthLogout() {
+  stopCloud();
+  if (!firebaseAuth) return;
+  firebaseAuth.signOut().catch(err => console.warn('Sign out', err));
 }
 
 function userRef() {
@@ -1080,6 +1260,10 @@ function setCloudDirty(dirty) {
 }
 
 function pushStateToFirebase() {
+  if (!isAdmin()) {
+    setCloudStatus('☁ Connecte-toi (admin) pour exporter', 'err');
+    return Promise.resolve(false);
+  }
   if (!firebaseReady || !firebaseDb || suppressCloudPush) return Promise.resolve(false);
   const payload = serializeState();
   setCloudStatus('☁ Sync…', 'warn');
@@ -1107,6 +1291,10 @@ function persistState() {
 
 /** Bouton manuel : pousse l'état local vers Firebase */
 function exportToCloud() {
+  if (!isAdmin()) {
+    showFormError('Connecte-toi avec un compte admin pour exporter vers le cloud.');
+    return;
+  }
   if (!allTrades.length) {
     showFormError('Aucune donnée à exporter vers le cloud.');
     return;
@@ -1128,7 +1316,7 @@ function exportToCloud() {
 }
 
 function startCloudListener() {
-  if (!firebaseReady || !firebaseDb) return;
+  if (!canRead() || !firebaseReady || !firebaseDb) return;
   if (cloudListener) {
     userRef().off('value', cloudListener);
     cloudListener = null;
@@ -1153,6 +1341,10 @@ function startCloudListener() {
 }
 
 async function bootSync() {
+  if (!canRead()) {
+    setCloudStatus('☁ Connecte-toi pour le cloud', 'warn');
+    return;
+  }
   const local = loadLocalState();
   if (local && local.trades && local.trades.length) {
     applyState(local, 'local');
@@ -1223,7 +1415,12 @@ window.addEventListener('DOMContentLoaded', () => {
   if (fStart) fStart.value = iso;
   attachSymbolInputNormalization();
   updateTickerDatalist();
-  bootSync();
+  const local = loadLocalState();
+  if (local && local.trades && local.trades.length) {
+    applyState(local, 'local');
+    setCloudStatus('☁ Local chargé — connexion requise pour le cloud', 'warn');
+  }
+  startAuthListener();
 });
 
 
